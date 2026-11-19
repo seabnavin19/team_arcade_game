@@ -1,0 +1,81 @@
+name: Test and deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - run: npm run build
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+  # The games → GitHub Pages (https://<you>.github.io/team_arcade_game/)
+  pages:
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
+
+  # The Telegram bot + score server → Cloudflare Workers.
+  # Skipped until the Cloudflare secrets are added (see README).
+  worker:
+    needs: test
+    runs-on: ubuntu-latest
+    env:
+      HAS_CLOUDFLARE: ${{ secrets.CLOUDFLARE_API_TOKEN != '' }}
+    steps:
+      - uses: actions/checkout@v4
+        if: env.HAS_CLOUDFLARE == 'true'
+      - name: Deploy Worker
+        id: deploy
+        if: env.HAS_CLOUDFLARE == 'true'
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: telegram
+          wranglerVersion: "4.165.0"
+          secrets: |
+            BOT_TOKEN
+            DATA_TOKEN
+            ARCADE_SECRET
+        env:
+          BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+          DATA_TOKEN: ${{ secrets.DATA_TOKEN }}
+          ARCADE_SECRET: ${{ secrets.ARCADE_SECRET }}
+      - name: Connect the bot to the Worker (webhook, commands, scores branch)
+        if: env.HAS_CLOUDFLARE == 'true' && steps.deploy.outputs.deployment-url != ''
+        env:
+          URL: ${{ steps.deploy.outputs.deployment-url }}
+          ARCADE_SECRET: ${{ secrets.ARCADE_SECRET }}
+        run: |
+          echo "Worker: $URL"
+          curl -fsS "$URL/setup?key=$ARCADE_SECRET" | tee /tmp/setup.json
+          echo
+          grep -q '"ok":true' /tmp/setup.json
+      - name: Not set up yet
+        if: env.HAS_CLOUDFLARE != 'true'
+        run: echo "Cloudflare secrets not added yet, so the Telegram server was not deployed. See README → Telegram setup."

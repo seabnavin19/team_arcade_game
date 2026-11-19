@@ -1,0 +1,22 @@
+# Cloudflare Worker for the Telegram version of Team Arcade.
+# Deployed automatically by .github/workflows/deploy.yml on every push to main.
+name = "team-arcade"
+main = "worker.js"
+compatibility_date = "2025-09-01"
+workers_dev = true
+
+# Monday 08:30 Cambodia time (01:30 UTC): post last week's results in each group.
+[triggers]
+crons = ["30 1 * * 1"]
+
+[vars]
+GAME_URL = "https://seabnavin19.github.io/team_arcade_game/"
+GAME_SHORT_NAME = "arcade"          # the short name you give the game in @BotFather
+GITHUB_REPO = "seabnavin19/team_arcade_game"
+DATA_BRANCH = "scores"              # scores are saved as JSON files on this branch
+ANNOUNCE = "top3"                   # post in the group when someone reaches: top3 | first | off
+
+# Secrets (set from GitHub secrets by the deploy workflow, never written here):
+#   BOT_TOKEN      from @BotFather
+#   DATA_TOKEN     GitHub fine-grained token with Contents read/write on this repo
+#   ARCADE_SECRET  any long random text; signs game links and protects /setup
