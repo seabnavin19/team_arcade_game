@@ -37,7 +37,19 @@ Telegram group ──/arcade, Play──▶ Cloudflare Worker (telegram/worker.j
 - **The Worker** is the only part holding the bot token and the GitHub token. It checks each run (who played, how long it took, whether the score is possible) before saving.
 - **Group messages:** the bot posts when someone takes #1 or enters the top 3 of a game, and every Monday at 08:30 it posts last week's results.
 
-**Bot commands:** `/arcade` posts the game with a Play button, `/board` shows this week's leaderboards, `/lastweek` shows last week's results, and `/help` explains the bot.
+**Bot commands:** `/arcade` posts the game with a Play button, `/party` starts a live party round (below), `/board` shows this week's leaderboards, `/lastweek` shows last week's results, and `/help` explains the bot.
+
+### ⚡ Live party (multiplayer)
+
+Send **`/party`** in the group. The bot posts a card with a **Join the party** button and a 60-second countdown.
+
+- Everyone who joins plays **Reaction Tap at the same moment, with the same targets**. The **first tap on a target takes its points**, and quicker taps score more.
+- Red targets are traps and only cost the person who taps them. Tapping a target someone else just took shows "too slow!" with no penalty.
+- A live scoreboard shows everyone's points during the 30 seconds. At the end, the bot posts the results and the winner in the group.
+- It needs at least 2 players; otherwise the party is cancelled. One party runs per group at a time, and you can join late up to 10 seconds before the end.
+- Party scores are just for fun. They don't count toward the weekly leaderboards.
+
+Each group's party runs in its own live room on Cloudflare (a Durable Object, included in the free plan). The server checks every tap against its own clock, so a tap on a target that wasn't on screen yet, or had already gone, doesn't count.
 
 > **Privacy:** this repository is public, so the `scores` branch can be read by anyone. It shows players' first names, last initials and scores.
 > To keep it private, make the repository private. GitHub Pages on a private repository needs a paid GitHub plan.
@@ -89,6 +101,7 @@ If the last step says it was skipped, open this address once in a browser:
 | To change | Edit |
 |---|---|
 | Group announcements (`top3`, `first` or `off`) | `ANNOUNCE` in `telegram/wrangler.toml` |
+| Party lobby length, minimum players | `JOIN_SECONDS`, `MIN_PLAYERS` in `src/party/rules.js` |
 | Time of the Monday results post | `crons` in `telegram/wrangler.toml` (UTC) |
 | Game rules or balance | `src/games/…`. Drone Shooter's rules are in `shooter-engine.js` |
 | Server-side score limits | `src/games/meta.js` |
@@ -117,10 +130,11 @@ To update the games, upload a new `arcade.js` with the same name. Players get it
 
 ```bash
 npm install
-npm test                       # 62 automated tests: game rules, saving and conflicts, ranking, the Telegram server
+npm test                       # 76 automated tests: game rules, saving and conflicts, ranking, the Telegram server, live parties
 npm run build                  # dist/ (Confluence) and site/ (Telegram / GitHub Pages)
 
 node dev/local-telegram.mjs    # Telegram version with a pretend Telegram + GitHub → http://localhost:8787/play?name=Dara
+cd telegram && npx wrangler dev # the real Worker locally, with live party rooms (put secrets in telegram/.dev.vars)
 python3 -m http.server 8765    # Confluence version on a pretend Confluence → http://localhost:8765/dev/harness.html?user=dara
 ```
 
@@ -129,6 +143,7 @@ src/core/       shared: seeded randomness, weeks, ranking, saving, input, sound
 src/games/      the four games (+ meta.js: names, formats and score limits shared with the server)
 src/ui/         the arcade hub and styles
 src/main.js            Confluence entry      src/telegram-main.js   Telegram entry
-telegram/       Cloudflare Worker: bot, signed links, GitHub JSON storage, Monday results
+src/party/      live party rules and screen
+telegram/       Cloudflare Worker: bot, signed links, GitHub JSON storage, Monday results, party rooms
 web/            GitHub Pages page + game cover image
 ```

@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { createHandler, weekPath, boardText, announcement, displayName, CHATS_PATH } from '../telegram/worker.js';
+import { createHandler, weekPath, boardText, announcement, displayName, CHATS_PATH } from '../telegram/app.js';
 import { deriveKeys, sign, verify } from '../telegram/token.js';
 import { weekKey } from '../src/core/time.js';
 

@@ -20,3 +20,12 @@ ANNOUNCE = "top3"                   # post in the group when someone reaches: to
 #   BOT_TOKEN      from @BotFather
 #   DATA_TOKEN     GitHub fine-grained token with Contents read/write on this repo
 #   ARCADE_SECRET  any long random text; signs game links and protects /setup
+
+# Live party rooms (one per group), SQLite-backed so they work on the free plan.
+[[durable_objects.bindings]]
+name = "PARTY"
+class_name = "PartyRoom"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["PartyRoom"]

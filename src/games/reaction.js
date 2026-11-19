@@ -36,7 +36,7 @@ export function buildTimeline(seed) {
 }
 
 // current drawn radius: shrinks to 40% over its life
-const radiusAt = (tg, age) => tg.r * (1 - 0.6 * Math.min(1, age / tg.life));
+export const radiusAt = (tg, age) => tg.r * (1 - 0.6 * Math.min(1, age / tg.life));
 
 export function createReactionState(seed) {
   return { time: 0, score: 0, hits: 0, fakes: 0, misses: 0, ages: [], timeline: buildTimeline(seed), done: new Set(), over: false };

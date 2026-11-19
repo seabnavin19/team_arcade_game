@@ -4,6 +4,7 @@ import css from './ui/arcade.css';
 import { createTelegramStore, decodeToken } from './telegram/client.js';
 import { createSound } from './core/sound.js';
 import { createApp } from './ui/app.js';
+import { createPartyApp } from './party/party-app.js';
 
 async function boot() {
   const root = document.getElementById('team-arcade');
@@ -18,22 +19,33 @@ async function boot() {
   const claims = token ? decodeToken(token) : null;
   const user = claims && api ? { key: `tg-${claims.u}`, name: claims.n } : null;
 
-  const store = user
-    ? createTelegramStore({ api, token })
-    : { loadBoard: async (game, week) => ({ status: 'ok', board: { game, week, entries: {} } }), submit: async () => ({ status: 'viewOnly' }), flushQueue: async () => ({}), pending: () => 0 };
+  const sound = createSound();
 
-  let touchOnly = false;
-  try { touchOnly = !window.matchMedia('(any-pointer: fine)').matches; } catch { /* old browser */ }
+  // "Join the party" link → live party screen first; "Back to arcade" → the normal hub.
+  if (user && claims.p && hash.get('party') === '1') {
+    createPartyApp(root, { api, token, sound, onExit: () => { history.replaceState(null, '', `${location.pathname}${location.search}#t=${token}`); startHub(); } });
+    return;
+  }
+  startHub();
 
-  const app = createApp(root, {
-    store, user, sound: createSound(), touchOnly,
-    notes: {
-      guest: 'Open Team Arcade from the Play button in your Telegram group so your scores count for the group.',
-      offline: "Can't reach the arcade server right now. You can still play, but scores won't save.",
-    },
-  });
-  await app.load();
-  window.TeamArcade = app;
+  async function startHub() {
+    const store = user
+      ? createTelegramStore({ api, token })
+      : { loadBoard: async (game, week) => ({ status: 'ok', board: { game, week, entries: {} } }), submit: async () => ({ status: 'viewOnly' }), flushQueue: async () => ({}), pending: () => 0 };
+
+    let touchOnly = false;
+    try { touchOnly = !window.matchMedia('(any-pointer: fine)').matches; } catch { /* old browser */ }
+
+    const app = createApp(root, {
+      store, user, sound, touchOnly,
+      notes: {
+        guest: 'Open Team Arcade from the Play button in your Telegram group so your scores count for the group.',
+        offline: "Can't reach the arcade server right now. You can still play, but scores won't save.",
+      },
+    });
+    await app.load();
+    window.TeamArcade = app;
+  }
 }
 
 boot();

@@ -4,7 +4,7 @@
 import http from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { extname, join } from 'node:path';
-import { createHandler } from '../telegram/worker.js';
+import { createHandler } from '../telegram/app.js';
 import { deriveKeys, sign } from '../telegram/token.js';
 
 const PORT = Number(process.env.PORT || 8787);
