@@ -8,6 +8,7 @@ export const GAME_META = {
   shooter: { title: 'Drone Shooter', emoji: '🚀', better: 'higher', format: fmtPoints, min: 0, max: 400000, minSeconds: 15 },
   reaction: { title: 'Reaction Tap', emoji: '⚡', better: 'higher', format: fmtPoints, min: 0, max: 25000, minSeconds: 29 },
   memory: { title: 'Memory Match', emoji: '🧠', better: 'lower', format: fmtTime, min: 4, max: 3600, minSeconds: 4 },
+  brain: { title: 'Brain Race', emoji: '💡', better: 'higher', format: fmtPoints, min: 0, max: 8000, minSeconds: 4 },
   typing: { title: 'Typing Race', emoji: '⌨️', better: 'higher', format: s => `${Math.round(s)} wpm`, min: 0, max: 200, minSeconds: 8 },
 };
 export const GAME_IDS = Object.keys(GAME_META);

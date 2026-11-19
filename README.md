@@ -1,6 +1,6 @@
 # Team Arcade
 
-Four quick break-time games with weekly leaderboards and an overall Champion ranking.
+Five quick break-time games with weekly leaderboards and an overall Champion ranking.
 The same games run in two places:
 
 - **Telegram:** in your team group. Tap **Play**, and scores are saved as JSON files in this repo.
@@ -12,8 +12,9 @@ The same games run in two places:
 | ⚡ **Reaction Tap** | Hit shrinking targets for 30 seconds; red targets cost points. | Points (higher is better) |
 | 🧠 **Memory Match** | Find 8 pairs on a 4×4 grid. | Time + 2 s for every move beyond 8 (lower is better) |
 | ⌨️ **Typing Race** | Type the passage of the day for 60 seconds (needs a keyboard). | Net words per minute; runs under 90% accuracy aren't ranked |
+| 💡 **Brain Race** | 8 IQ puzzles (patterns, maths, missing numbers, largest value, time, odd one out), 10 s each, one try. Tap or press 1–4. | Points: 500 + up to 500 for speed per right answer (higher is better) |
 
-Everyone gets the same waves, targets, cards and passage on the same day, and they change daily.
+Everyone gets the same waves, targets, cards, passage and puzzles on the same day, and they change daily.
 Boards reset every Monday at 00:00 Cambodia time (UTC+7).
 
 ---
@@ -151,7 +152,7 @@ To update the games, upload a new `arcade.js` with the same name. Players get it
 
 ```bash
 npm install
-npm test                       # 95 automated tests: game rules, saving and conflicts, ranking, the Telegram server, live parties
+npm test                       # 98 automated tests: game rules, saving and conflicts, ranking, the Telegram server, live parties
 npm run build                  # dist/ (Confluence) and site/ (Telegram / GitHub Pages)
 
 node dev/local-telegram.mjs    # Telegram version with a pretend Telegram + GitHub → http://localhost:8787/play?name=Dara
