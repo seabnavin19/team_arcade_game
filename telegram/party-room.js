@@ -2,7 +2,10 @@
 // Players connect with WebSockets; alarms start and end the round; the room
 // posts the lobby, a cancel notice, and the results in the group.
 
-import { createParty, join, hit, miss, start, finish, timelineFor, publicState, isActive, MIN_PLAYERS, PARTY_SECONDS } from '../src/party/rules.js';
+import { createParty, join, hit, miss, start, finish, timelineFor, publicState, isActive, MIN_PLAYERS, PARTY_SECONDS, PARTY_GAMES } from '../src/party/rules.js';
+import { createBattle, addShip, setInput, step as stepBattle, snapshot, battleStats } from '../src/party/battle.js';
+
+const TICK_MS = 50; // Ship Battle runs 20 times a second
 
 const esc = s => String(s ?? '').replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
 const MEDALS = ['🥇', '🥈', '🥉'];
@@ -15,6 +18,8 @@ export class PartyRoom {
     this.http = fetchImpl;
     this.party = undefined; // loaded lazily (the object may have been evicted)
     this.timeline = null;
+    this.battle = null;     // live Ship Battle simulation (in memory only)
+    this.ticker = null;
   }
 
   async load() {
@@ -49,7 +54,8 @@ export class PartyRoom {
 
     if (url.pathname === '/create') {
       if (isActive(this.party)) return Response.json({ created: false, party: publicState(this.party) });
-      this.party = createParty({ id: crypto.randomUUID().slice(0, 8), chat: body.chat, seed: crypto.randomUUID(), now: this.now(), joinSeconds: body.joinSeconds });
+      this.stopBattle();
+      this.party = createParty({ id: crypto.randomUUID().slice(0, 8), chat: body.chat, seed: crypto.randomUUID(), now: this.now(), joinSeconds: body.joinSeconds, game: body.game });
       this.timeline = timelineFor(this.party);
       await this.save();
       await this.ctx.storage.setAlarm(this.party.startAt);
@@ -76,6 +82,7 @@ export class PartyRoom {
       server.serializeAttachment({ key: user.key, name: user.name });
       const joined = join(this.party, user, this.now());
       if (joined.ok) await this.save();
+      if (joined.ok && this.party.game === 'battle' && this.party.status === 'running') this.ensureBattle() && addShip(this.battle, user.key, user.name);
       server.send(JSON.stringify({ ...this.stateMsg(), you: user.key, joinError: joined.ok ? null : joined.reason }));
       if (joined.ok) this.broadcast(this.stateMsg());
       return new Response(null, { status: 101, webSocket: client });
@@ -92,6 +99,10 @@ export class PartyRoom {
     const p = this.party;
     if (msg.type === 'ping') { ws.send(JSON.stringify({ type: 'pong', c: msg.c, s: this.now() })); return; }
     if (!p) return;
+    if (msg.type === 'input') {
+      if (p.game === 'battle' && p.status === 'running' && this.ensureBattle()) setInput(this.battle, me.key, Number(msg.mx), Number(msg.my));
+      return;
+    }
     if (msg.type === 'hit') {
       const r = hit(p, this.timeline, me.key, msg.i, msg.age, this.now());
       if (r.kind === 'invalid') return;
@@ -110,6 +121,41 @@ export class PartyRoom {
   async webSocketClose(ws, code) { try { ws.close(code, 'bye'); } catch { /* already closed */ } }
   async webSocketError() { /* the client will reconnect */ }
 
+  // ---------- Ship Battle loop ----------
+  ensureBattle() {
+    if (this.battle) return true;
+    const p = this.party;
+    if (!p || p.game !== 'battle' || p.status !== 'running') return false;
+    // (Re)build the arena; after a restart everyone respawns but keeps their score.
+    this.battle = createBattle(p.seed);
+    for (const [key, pl] of Object.entries(p.players)) {
+      const ship = addShip(this.battle, key, pl.name);
+      if (ship) Object.assign(ship, { kos: pl.kos || 0, downs: pl.downs || 0, hits: pl.hits || 0 });
+    }
+    let n = 0;
+    this.ticker = setInterval(() => {
+      if (!this.battle) return;
+      stepBattle(this.battle, TICK_MS / 1000);
+      this.broadcast({ type: 'snap', t: this.now(), ...snapshot(this.battle) });
+      if (++n % 40 === 0) { this.copyBattleStats(); this.save(); } // keep scores safe every 2 s
+    }, TICK_MS);
+    return true;
+  }
+
+  copyBattleStats() {
+    if (!this.battle || !this.party) return;
+    for (const [key, st] of Object.entries(battleStats(this.battle))) {
+      const pl = this.party.players[key];
+      if (pl) Object.assign(pl, { score: st.score, kos: st.kos, downs: st.downs, hits: st.hits });
+    }
+  }
+
+  stopBattle() {
+    if (this.ticker) clearInterval(this.ticker);
+    this.ticker = null;
+    this.battle = null;
+  }
+
   // ---------- timers ----------
   async alarm() {
     await this.load();
@@ -120,7 +166,8 @@ export class PartyRoom {
       await this.save();
       this.broadcast(this.stateMsg());
       if (status === 'running') {
-        await this.ctx.storage.setAlarm(p.endAt + 1500); // a little grace for late messages
+        if (p.game === 'battle') { this.ensureBattle(); this.broadcast({ type: 'snap', t: this.now(), ...snapshot(this.battle) }); }
+        await this.ctx.storage.setAlarm(p.game === 'battle' ? p.endAt : p.endAt + 1500); // taps get a little grace
       } else {
         const names = Object.values(p.players).map(x => x.name);
         await this.tg('sendMessage', {
@@ -129,13 +176,18 @@ export class PartyRoom {
         });
       }
     } else if (p.status === 'running') {
+      if (p.game === 'battle') { this.copyBattleStats(); this.stopBattle(); }
       const res = finish(p);
       await this.save();
       this.broadcast(this.stateMsg());
-      const lines = res.slice(0, 10).map(r => `${MEDALS[r.place - 1] || `${r.place}.`} <b>${esc(r.name)}</b> · ${r.score.toLocaleString('en-US')} (${r.hits} hits${r.fakes ? `, ${r.fakes} fakes` : ''})`);
+      const g = PARTY_GAMES[p.game || 'reaction'];
+      const detail = r => (p.game === 'battle'
+        ? `${r.kos} ${r.kos === 1 ? 'KO' : 'KOs'} · knocked out ${r.downs}×`
+        : `${r.score.toLocaleString('en-US')} (${r.hits} hits${r.fakes ? `, ${r.fakes} fakes` : ''})`);
+      const lines = res.slice(0, 10).map(r => `${MEDALS[r.place - 1] || `${r.place}.`} <b>${esc(r.name)}</b> · ${detail(r)}`);
       await this.tg('sendMessage', {
         chat_id: p.chat, parse_mode: 'HTML',
-        text: [`⚡ <b>Reaction Tap Party results</b> · ${res.length} players`, '', ...lines, '', res[0] ? `🎉 <b>${esc(res[0].name)}</b> wins the party!` : '', 'Rematch? Send /party'].join('\n'),
+        text: [`${g.emoji} <b>${g.title} Party results</b> · ${res.length} players`, '', ...lines, '', res[0] ? `🎉 <b>${esc(res[0].name)}</b> wins the party!` : '', 'Rematch? Send /party'].join('\n'),
       });
     }
   }

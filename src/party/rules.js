@@ -1,6 +1,7 @@
-// Reaction Tap Party: the rules, shared by the party server and the tests.
-// Everyone sees the same targets at the same moment; the first valid tap on a
-// target wins its points. Red fakes cost the player who taps them.
+// Live party rules, shared by the party server and the tests.
+//  • Reaction Tap: everyone sees the same targets at the same moment; the
+//    first valid tap on a target wins its points. Red fakes cost the tapper.
+//  • Ship Battle: see battle.js; scores are KOs.
 
 import { buildTimeline, scoreHit, FAKE_PENALTY, MISS_PENALTY, DURATION } from '../games/reaction.js';
 
@@ -8,13 +9,21 @@ export const JOIN_SECONDS = 60;      // lobby length after /party
 export const MIN_PLAYERS = 2;        // fewer than this → cancelled
 export const LATE_JOIN_CUTOFF = 10;  // can't join in the last 10 seconds
 export const PARTY_SECONDS = DURATION;
+
+export const PARTY_GAMES = {
+  reaction: { title: 'Reaction Tap', emoji: '⚡', seconds: DURATION, maxPlayers: 50,
+    pitch: 'Everyone gets the same targets at the same moment. The fastest tap takes the points. Red ones are traps!' },
+  battle: { title: 'Ship Battle', emoji: '🚀', seconds: 90, maxPlayers: 8,
+    pitch: 'Everyone flies a ship in one arena. Your ship fires forward on its own, so steer to aim. 3 hits knock a ship out, and the most KOs wins.' },
+};
 const CLOCK_SLACK = 0.4;             // seconds: tolerated clock difference
 const LATENCY_SLACK = 1.2;           // seconds: tolerated network delay
 
-export function createParty({ id, chat, seed, now, joinSeconds = JOIN_SECONDS }) {
+export function createParty({ id, chat, seed, now, joinSeconds = JOIN_SECONDS, game = 'reaction' }) {
+  if (!PARTY_GAMES[game]) game = 'reaction';
   const startAt = now + joinSeconds * 1000;
   return {
-    id, chat, seed: String(seed), status: 'lobby', createdAt: now, startAt, endAt: startAt + PARTY_SECONDS * 1000,
+    id, chat, game, seed: String(seed), status: 'lobby', createdAt: now, startAt, endAt: startAt + PARTY_GAMES[game].seconds * 1000,
     players: {}, claimed: {}, messageId: null,
   };
 }
@@ -25,7 +34,10 @@ export const isActive = p => !!p && (p.status === 'lobby' || p.status === 'runni
 export function join(p, user, now) {
   if (!isActive(p)) return { ok: false, reason: 'This party is over. Send /party to start a new one.' };
   if (now > p.endAt - LATE_JOIN_CUTOFF * 1000) return { ok: false, reason: 'Too late to join this round.' };
-  if (!p.players[user.key]) p.players[user.key] = { name: user.name, score: 0, hits: 0, fakes: 0, misses: 0, joinedAt: now };
+  if (!p.players[user.key]) {
+    if (Object.keys(p.players).length >= PARTY_GAMES[p.game || 'reaction'].maxPlayers) return { ok: false, reason: 'This party is full. Catch the next one!' };
+    p.players[user.key] = { name: user.name, score: 0, hits: 0, fakes: 0, misses: 0, kos: 0, downs: 0, joinedAt: now };
+  }
   return { ok: true };
 }
 
@@ -70,13 +82,14 @@ export function finish(p) {
 
 export function results(p) {
   const rows = Object.entries(p.players).map(([key, v]) => ({ key, ...v }));
-  rows.sort((a, b) => b.score - a.score || b.hits - a.hits || a.joinedAt - b.joinedAt);
+  rows.sort((a, b) => b.score - a.score || (a.downs || 0) - (b.downs || 0) || b.hits - a.hits || a.joinedAt - b.joinedAt);
   let place = 0;
-  return rows.map((r, i) => { if (i === 0 || r.score !== rows[i - 1].score) place = i + 1; return { ...r, place }; });
+  const same = (a, b) => a.score === b.score && (a.downs || 0) === (b.downs || 0);
+  return rows.map((r, i) => { if (i === 0 || !same(r, rows[i - 1])) place = i + 1; return { ...r, place }; });
 }
 
 /** What clients are allowed to see. */
 export const publicState = p => p && ({
-  id: p.id, status: p.status, seed: p.seed, startAt: p.startAt, endAt: p.endAt, claimed: p.claimed,
-  players: results(p).map(({ key, name, score, hits, fakes, place }) => ({ key, name, score, hits, fakes, place })),
+  id: p.id, game: p.game || 'reaction', status: p.status, seed: p.seed, startAt: p.startAt, endAt: p.endAt, claimed: p.claimed,
+  players: results(p).map(({ key, name, score, hits, fakes, kos, downs, place }) => ({ key, name, score, hits, fakes, kos, downs, place })),
 });

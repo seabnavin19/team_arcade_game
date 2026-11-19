@@ -39,17 +39,27 @@ Telegram group ──/arcade, Play──▶ Cloudflare Worker (telegram/worker.j
 
 **Bot commands:** `/arcade` posts the game with a Play button, `/party` starts a live party round (below), `/board` shows this week's leaderboards, `/lastweek` shows last week's results, and `/help` explains the bot.
 
-### ⚡ Live party (multiplayer)
+### 🎉 Live party (multiplayer)
 
-Send **`/party`** in the group. The bot posts a card with a **Join the party** button and a 60-second countdown.
+Send **`/party`** in the group and pick a game from the buttons, or go straight to one with **`/party battle`** or **`/party reaction`**.
+The bot posts a card with a **Join the party** button and a 60-second countdown. A party needs at least 2 players, and one party runs per group at a time.
 
-- Everyone who joins plays **Reaction Tap at the same moment, with the same targets**. The **first tap on a target takes its points**, and quicker taps score more.
-- Red targets are traps and only cost the person who taps them. Tapping a target someone else just took shows "too slow!" with no penalty.
-- A live scoreboard shows everyone's points during the 30 seconds. At the end, the bot posts the results and the winner in the group.
-- It needs at least 2 players; otherwise the party is cancelled. One party runs per group at a time, and you can join late up to 10 seconds before the end.
-- Party scores are just for fun. They don't count toward the weekly leaderboards.
+**🚀 Ship Battle** (90 seconds, 2–8 players)
+- Everyone flies a ship in one arena with cover blocks. Your ship **fires forward on its own**, so you aim by steering.
+- 3 hits knock a ship out (KO). It respawns 2 seconds later with a short spawn shield.
+- Pickups appear every 12 seconds: **+** refills your shields, **R** gives 6 seconds of rapid fire.
+- **Most KOs wins.** Ties go to whoever was knocked out fewer times.
+- Controls: mouse (the ship flies toward the cursor), arrow keys / WASD, or drag anywhere on a phone.
 
-Each group's party runs in its own live room on Cloudflare (a Durable Object, included in the free plan). The server checks every tap against its own clock, so a tap on a target that wasn't on screen yet, or had already gone, doesn't count.
+**⚡ Reaction Tap** (30 seconds, any number)
+- Everyone gets the same targets at the same moment. **The first tap on a target takes its points**, and quicker taps score more.
+- Red targets are traps and only cost the person who taps them. Tapping a target someone just took shows "too slow!" with no penalty.
+
+A live scoreboard runs under the game. At the end, the bot posts the results and the winner in the group.
+Party scores are just for fun. They don't count toward the weekly leaderboards.
+
+Each group's party runs in its own live room on Cloudflare (a Durable Object, included in the free plan).
+The room is the referee. In Ship Battle it runs the arena 20 times a second and decides every hit. In Reaction Tap it checks every tap against its own clock.
 
 > **Privacy:** this repository is public, so the `scores` branch can be read by anyone. It shows players' first names, last initials and scores.
 > To keep it private, make the repository private. GitHub Pages on a private repository needs a paid GitHub plan.
@@ -101,7 +111,8 @@ If the last step says it was skipped, open this address once in a browser:
 | To change | Edit |
 |---|---|
 | Group announcements (`top3`, `first` or `off`) | `ANNOUNCE` in `telegram/wrangler.toml` |
-| Party lobby length, minimum players | `JOIN_SECONDS`, `MIN_PLAYERS` in `src/party/rules.js` |
+| Party lobby length, minimum players, game lengths | `src/party/rules.js` |
+| Ship Battle balance (speed, fire rate, shields, pickups) | top of `src/party/battle.js` |
 | Time of the Monday results post | `crons` in `telegram/wrangler.toml` (UTC) |
 | Game rules or balance | `src/games/…`. Drone Shooter's rules are in `shooter-engine.js` |
 | Server-side score limits | `src/games/meta.js` |
@@ -130,7 +141,7 @@ To update the games, upload a new `arcade.js` with the same name. Players get it
 
 ```bash
 npm install
-npm test                       # 76 automated tests: game rules, saving and conflicts, ranking, the Telegram server, live parties
+npm test                       # 86 automated tests: game rules, saving and conflicts, ranking, the Telegram server, live parties
 npm run build                  # dist/ (Confluence) and site/ (Telegram / GitHub Pages)
 
 node dev/local-telegram.mjs    # Telegram version with a pretend Telegram + GitHub → http://localhost:8787/play?name=Dara

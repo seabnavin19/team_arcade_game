@@ -1,6 +1,7 @@
 // The live party screen: lobby → synced Reaction Tap round → results.
 
-import { timelineFor } from './rules.js';
+import { timelineFor, PARTY_GAMES } from './rules.js';
+import { createBattleView } from './battle-view.js';
 import { radiusAt, W, H, DURATION } from '../games/reaction.js';
 import { createLoop } from '../core/loop.js';
 import { createInput } from '../core/input.js';
@@ -21,11 +22,12 @@ export function createPartyApp(root, { api, token, sound, onExit, WebSocketImpl 
         <button class="ta-iconbtn" data-sound type="button"></button>
       </header>
       <section class="ta-party-lobby" data-lobby>
-        <h2 class="ta-party-title">Reaction Tap Party</h2>
+        <h2 class="ta-party-title" data-title>Party</h2>
         <div class="ta-party-count" data-count>…</div>
         <div class="ta-party-sub" data-sub>Connecting…</div>
         <ul class="ta-party-players" data-players></ul>
-        <p class="ta-party-rules">Everyone gets the same targets at the same moment. <b>The fastest tap takes the points</b>, and quicker taps score more. Red targets are traps.</p>
+        <p class="ta-party-rules" data-rules></p>
+        <p class="ta-party-controls" data-controls></p>
       </section>
       <section class="ta-party-game" data-game hidden>
         <div class="ta-canvas-wrap"><canvas data-canvas tabindex="0"></canvas><div class="ta-overlay" data-overlay></div></div>
@@ -35,7 +37,7 @@ export function createPartyApp(root, { api, token, sound, onExit, WebSocketImpl 
       <section class="ta-party-results" data-results hidden></section>
     </div>`;
   const $ = s => root.querySelector(`[data-${s}]`);
-  const el = { lobby: $('lobby'), count: $('count'), sub: $('sub'), players: $('players'), game: $('game'), canvas: $('canvas'), overlay: $('overlay'), board: $('board'), results: $('results'), sound: $('sound') };
+  const el = { title: $('title'), rules: $('rules'), controls: $('controls'), lobby: $('lobby'), count: $('count'), sub: $('sub'), players: $('players'), game: $('game'), canvas: $('canvas'), overlay: $('overlay'), board: $('board'), results: $('results'), sound: $('sound') };
 
   const renderSound = () => { el.sound.innerHTML = sound.on ? ICONS.sound : ICONS.muted; el.sound.title = sound.on ? 'Sound on' : 'Sound off'; };
   el.sound.addEventListener('click', () => { sound.toggle(); renderSound(); });
@@ -90,17 +92,44 @@ export function createPartyApp(root, { api, token, sound, onExit, WebSocketImpl 
       } else if (m.kind === 'fake' && m.key === me && tg) {
         parts.burst(tg.x, tg.y, C.red, 18); floats.add(tg.x, tg.y - 12, `${m.points}`, C.red); sound.bad();
       }
+    } else if (m.type === 'snap') {
+      battle?.onSnap(m);
+      liveBattleScores(m);
     } else if (m.type === 'taken') {
       const tg = timeline?.[m.i];
       if (tg) floats.add(tg.x, tg.y - 12, 'too slow!', C.muted);
     }
   }
 
+  // During a battle the scores arrive in the 20-per-second updates, not as
+  // separate events, so keep the live scoreboard in step from those.
+  let lastBoard = 0;
+  function liveBattleScores(m) {
+    if (!party) return;
+    for (const sh of m.ships) {
+      const pl = party.players.find(p => p.key === m.who[sh[0]]);
+      if (pl) { pl.kos = sh[8]; pl.downs = sh[9]; pl.score = sh[8]; }
+    }
+    party.players.sort((a, b) => b.score - a.score || a.downs - b.downs);
+    let place = 0;
+    party.players.forEach((p, i, arr) => { if (i === 0 || p.score !== arr[i - 1].score || p.downs !== arr[i - 1].downs) place = i + 1; p.place = place; });
+    if (performance.now() - lastBoard > 400) { lastBoard = performance.now(); render(); }
+  }
+
   function setParty(p) {
     if (!p) return;
     const first = !party || party.id !== p.id;
     party = p;
-    if (first) { timeline = timelineFor(p); hidden.clear(); }
+    if (first) {
+      timeline = timelineFor(p); hidden.clear();
+      const g = PARTY_GAMES[p.game] || PARTY_GAMES.reaction;
+      el.title.textContent = `${g.emoji} ${g.title} Party`;
+      el.rules.textContent = g.pitch;
+      el.controls.textContent = p.game === 'battle'
+        ? 'Controls: move with the mouse, arrow keys or WASD. On a phone, drag anywhere to steer.'
+        : 'Controls: click or tap the targets.';
+      if (p.game === 'battle' && !battle) battle = createBattleView({ ctx, input, send, serverNow, getParty: () => party, getMe: () => me, color, sound, parts, floats });
+    }
     for (const [i] of Object.entries(p.claimed || {})) hidden.add(Number(i));
     p.players.forEach(pl => color(pl.key));
     render();
@@ -117,17 +146,23 @@ export function createPartyApp(root, { api, token, sound, onExit, WebSocketImpl 
       const list = party.players.map(pl => `<li style="--c:${color(pl.key)}" class="${pl.key === me ? 'is-me' : ''}">${esc(pl.name)}</li>`).join('');
       el.players.innerHTML = list || '<li class="ta-muted">Nobody yet…</li>';
       el.sub.textContent = `${party.players.length} ${party.players.length === 1 ? 'player' : 'players'} in · needs at least 2`;
+      const val = pl => (party.game === 'battle' ? `${pl.kos || 0} KO` : fmt(pl.score));
       el.board.innerHTML = party.players.map(pl => `
-        <li class="${pl.key === me ? 'is-me' : ''}" style="--c:${color(pl.key)}"><span class="ta-place">${pl.place}</span><span class="ta-name">${esc(pl.name)}</span><span class="ta-score">${fmt(pl.score)}</span></li>`).join('');
+        <li class="${pl.key === me ? 'is-me' : ''}" style="--c:${color(pl.key)}"><span class="ta-place">${pl.place}</span><span class="ta-name">${esc(pl.name)}</span><span class="ta-score">${val(pl)}</span></li>`).join('');
     }
     if (status === 'error') showResults(`<p class="ta-warn">${esc(fatal)}</p>`);
     if (status === 'cancelled') showResults('<p>Not enough players joined, so the party was cancelled.<br>Send <b>/party</b> in the group to try again.</p>');
     if (status === 'done') {
       const mine = party.players.find(p => p.key === me);
       showResults(`
-        ${mine ? `<div class="ta-result-label">You finished</div><div class="ta-result-score">${MEDALS[mine.place - 1] || `#${mine.place}`}</div><div class="ta-result-meta">${fmt(mine.score)} points · ${mine.hits} hits${mine.fakes ? ` · ${mine.fakes} fakes` : ''}</div>` : ''}
-        <ol class="ta-party-final">${party.players.map(p => `<li class="${p.key === me ? 'is-me' : ''}"><span>${MEDALS[p.place - 1] || `${p.place}.`}</span><span class="ta-name">${esc(p.name)}</span><span class="ta-score">${fmt(p.score)}</span></li>`).join('')}</ol>`);
+        ${mine ? `<div class="ta-result-label">You finished</div><div class="ta-result-score">${MEDALS[mine.place - 1] || `#${mine.place}`}</div><div class="ta-result-meta">${detail(mine)}</div>` : ''}
+        <ol class="ta-party-final">${party.players.map(p => `<li class="${p.key === me ? 'is-me' : ''}"><span>${MEDALS[p.place - 1] || `${p.place}.`}</span><span class="ta-name">${esc(p.name)}</span><span class="ta-score">${party.game === 'battle' ? `${p.kos || 0} KO` : fmt(p.score)}</span></li>`).join('')}</ol>`);
     }
+  }
+  function detail(pl) {
+    return party.game === 'battle'
+      ? `${pl.kos || 0} ${pl.kos === 1 ? 'KO' : 'KOs'} · knocked out ${pl.downs || 0}× · ${pl.hits || 0} hits`
+      : `${fmt(pl.score)} points · ${pl.hits} hits${pl.fakes ? ` · ${pl.fakes} fakes` : ''}`;
   }
   function showResults(html) {
     el.results.innerHTML = `<div class="ta-result">${html}<div class="ta-result-actions"><button class="ta-btn" type="button" data-exit>Back to arcade</button></div></div>`;
@@ -141,8 +176,9 @@ export function createPartyApp(root, { api, token, sound, onExit, WebSocketImpl 
     const c = el.canvas.getContext('2d'); c.setTransform(dpr, 0, 0, dpr, 0, 0); return c;
   })();
   const input = createInput(el.canvas, { width: W, height: H, captureAllKeys: false });
+  let battle = null;
   input.on('pointerdown', pt => {
-    if (party?.status !== 'running') return;
+    if (party?.status !== 'running' || party.game === 'battle') return;
     const t = (serverNow() - party.startAt) / 1000;
     for (let i = timeline.length - 1; i >= 0; i--) {
       const tg = timeline[i], age = t - tg.t;
@@ -167,6 +203,7 @@ export function createPartyApp(root, { api, token, sound, onExit, WebSocketImpl 
   const loop = createLoop({
     update(dt) {
       parts.update(dt); floats.update(dt);
+      if (battle && party?.status === 'running') battle.update(dt);
       if (party?.status === 'lobby') {
         const left = Math.max(0, Math.ceil((party.startAt - serverNow()) / 1000));
         el.count.textContent = left > 0 ? `${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}` : 'GO!';
@@ -175,6 +212,7 @@ export function createPartyApp(root, { api, token, sound, onExit, WebSocketImpl 
     },
     render() {
       if (party?.status !== 'running') return;
+      if (party.game === 'battle') { battle?.render(); return; }
       const t = (serverNow() - party.startAt) / 1000;
       ctx.fillStyle = C.bg; ctx.fillRect(0, 0, W, H);
       ctx.strokeStyle = 'rgba(141,136,179,0.07)'; ctx.lineWidth = 1;

@@ -14,7 +14,7 @@ import { weekKey, previousWeekKey, weekLabel } from '../src/core/time.js';
 import { mergeEntry, emptyBoard } from '../src/core/store.js';
 import { rankBoard, championBoard } from '../src/core/ranking.js';
 import { GAME_META, GAME_IDS, checkRun } from '../src/games/meta.js';
-import { JOIN_SECONDS, MIN_PLAYERS } from '../src/party/rules.js';
+import { JOIN_SECONDS, MIN_PLAYERS, PARTY_GAMES } from '../src/party/rules.js';
 
 const SESSION_HOURS = 12;
 const RUN_MINUTES = 45;
@@ -101,6 +101,32 @@ export function createHandler({ fetch: fetchImpl = (...a) => fetch(...a), now = 
     return res.json();
   };
 
+  /** Open a party lobby in a group. Returns false if one is already running. */
+  async function startParty(c, chat, game, threadId, { pickedBy, pickerMessageId } = {}) {
+    const g = PARTY_GAMES[game];
+    const thread = threadId ? { message_thread_id: threadId } : {};
+    const made = await roomCall(c.env, chat.id, '/create', { chat: chat.id, game, joinSeconds: Number(c.env.PARTY_JOIN_SECONDS) || undefined });
+    if (!made.created) {
+      const cur = PARTY_GAMES[made.party?.game] || g;
+      await c.tg('sendMessage', { chat_id: chat.id, parse_mode: 'HTML', text: `${cur.emoji} A <b>${cur.title}</b> party is already on. Tap <b>Join the party</b> on its card.`, ...thread });
+      return false;
+    }
+    if (pickerMessageId) {
+      await c.tg('editMessageText', { chat_id: chat.id, message_id: pickerMessageId, parse_mode: 'HTML', text: `🎉 <b>${esc(pickedBy)}</b> picked <b>${g.emoji} ${g.title}</b>` });
+    }
+    const card = await c.tg('sendGame', {
+      chat_id: chat.id, game_short_name: c.env.GAME_SHORT_NAME, ...thread,
+      reply_markup: { inline_keyboard: [[{ text: `${g.emoji} Join the party`, callback_game: {} }]] },
+    });
+    if (card.ok) await roomCall(c.env, chat.id, '/set-message', { messageId: card.result.message_id });
+    const secs = Math.round((made.party.startAt - now()) / 1000);
+    await c.tg('sendMessage', {
+      chat_id: chat.id, parse_mode: 'HTML', ...thread,
+      text: [`${g.emoji} <b>${g.title} Party!</b> Starts in ${secs} seconds and lasts ${g.seconds} seconds.`, `Tap <b>Join the party</b> on the card above. ${g.pitch}`, `Needs at least ${MIN_PLAYERS} players${g.maxPlayers < 50 ? `, up to ${g.maxPlayers}` : ''}.`].join('\n'),
+    });
+    return true;
+  }
+
   let cachedUsername = null;
   async function botUsername(c) {
     if (!cachedUsername) { const me = await c.tg('getMe', {}); cachedUsername = me.ok ? me.result.username : ''; }
@@ -126,6 +152,12 @@ export function createHandler({ fetch: fetchImpl = (...a) => fetch(...a), now = 
   async function onUpdate(c, update, ctx, origin) {
     const cq = update.callback_query;
     if (cq) {
+      if (cq.data?.startsWith('party:') && cq.message?.chat) {
+        const game = cq.data.slice(6);
+        if (!PARTY_GAMES[game] || !c.env.PARTY) return c.tg('answerCallbackQuery', { callback_query_id: cq.id });
+        const started = await startParty(c, cq.message.chat, game, cq.message.message_thread_id, { pickedBy: displayName(cq.from), pickerMessageId: cq.message.message_id });
+        return c.tg('answerCallbackQuery', { callback_query_id: cq.id, text: started ? `${PARTY_GAMES[game].title} party on!` : 'A party is already on' });
+      }
       if (!cq.game_short_name) return c.tg('answerCallbackQuery', { callback_query_id: cq.id });
       const chat = cq.message?.chat;
       const claims = { typ: 's', u: cq.from.id, n: displayName(cq.from), c: chat ? chat.id : 'inline', iat: now(), exp: now() + SESSION_HOURS * 3600e3 };
@@ -159,19 +191,10 @@ export function createHandler({ fetch: fetchImpl = (...a) => fetch(...a), now = 
       case 'party': {
         if (msg.chat.type === 'private') return reply('Parties are for groups: add me to your team group and send /party there.');
         if (!c.env.PARTY) return reply('Live parties are not switched on for this server yet.');
-        const made = await roomCall(c.env, msg.chat.id, '/create', { chat: msg.chat.id, joinSeconds: Number(c.env.PARTY_JOIN_SECONDS) || undefined });
-        if (!made.created) return reply('⚡ A party is already on. Tap <b>Join the party</b> on the card above.');
-        const game = await c.tg('sendGame', {
-          chat_id: msg.chat.id, game_short_name: c.env.GAME_SHORT_NAME,
-          reply_markup: { inline_keyboard: [[{ text: '⚡ Join the party', callback_game: {} }]] },
-          ...(msg.message_thread_id ? { message_thread_id: msg.message_thread_id } : {}),
-        });
-        if (game.ok) await roomCall(c.env, msg.chat.id, '/set-message', { messageId: game.result.message_id });
-        return reply([
-          `⚡ <b>Reaction Tap Party!</b> Starts in ${JOIN_SECONDS} seconds.`,
-          'Tap <b>Join the party</b> on the card above. Everyone gets the same targets at the same time, and the fastest tap takes the points. Red ones are traps!',
-          `Needs at least ${MIN_PLAYERS} players.`,
-        ].join('\n'));
+        const arg = (msg.text.split(/\s+/)[1] || '').toLowerCase();
+        const pick = Object.keys(PARTY_GAMES).find(g => g === arg || PARTY_GAMES[g].title.toLowerCase().startsWith(arg) && arg);
+        if (pick) return startParty(c, msg.chat, pick, msg.message_thread_id);
+        return reply('🎉 <b>Pick a party game:</b>', { reply_markup: { inline_keyboard: [Object.entries(PARTY_GAMES).map(([id, g]) => ({ text: `${g.emoji} ${g.title}`, callback_data: `party:${id}` }))] } });
       }
       case 'board':
       case 'champion':
@@ -190,7 +213,7 @@ export function createHandler({ fetch: fetchImpl = (...a) => fetch(...a), now = 
           'Four quick games for your break: 🚀 Drone Shooter, ⚡ Reaction Tap, 🧠 Memory Match and ⌨️ Typing Race.',
           '',
           '/arcade: post the game, then tap <b>Play</b>',
-          '/party: live Reaction Tap round for everyone on a break right now',
+          '/party: live multiplayer round: ⚡ Reaction Tap or 🚀 Ship Battle',
           '/board: this week\'s leaderboards and champion',
           '/lastweek: last week\'s results',
           '',
@@ -273,7 +296,7 @@ export function createHandler({ fetch: fetchImpl = (...a) => fetch(...a), now = 
     steps.webhook = hook.ok ? `${origin}/telegram` : hook.description;
     const cmds = await c.tg('setMyCommands', { commands: [
       { command: 'arcade', description: 'Post Team Arcade, then tap Play' },
-      { command: 'party', description: 'Start a live Reaction Tap party' },
+      { command: 'party', description: 'Live party: Reaction Tap or Ship Battle' },
       { command: 'board', description: "This week's leaderboards" },
       { command: 'lastweek', description: "Last week's results" },
       { command: 'help', description: 'How it works' },

@@ -57,17 +57,17 @@ beforeEach(async () => {
 
 describe('live party', () => {
   it('/party posts a join card, a second /party says one is already on', async () => {
-    await webhook({ message: { text: '/party', chat: GROUP, from: { id: 1, first_name: 'Dara' } } });
+    await webhook({ message: { text: '/party reaction', chat: GROUP, from: { id: 1, first_name: 'Dara' } } });
     const card = sent.find(s => s.method === 'sendGame').body;
     expect(card.reply_markup.inline_keyboard[0][0]).toEqual({ text: '⚡ Join the party', callback_game: {} });
     expect(lastText()).toMatch(/Starts in 60 seconds/);
-    await webhook({ message: { text: '/party', chat: GROUP, from: { id: 1, first_name: 'Dara' } } });
+    await webhook({ message: { text: '/party reaction', chat: GROUP, from: { id: 1, first_name: 'Dara' } } });
     expect(lastText()).toMatch(/already on/);
     expect(sent.filter(s => s.method === 'sendGame')).toHaveLength(1);
   });
 
   it('Join on the party card gives a party link; Play on a normal card does not', async () => {
-    await webhook({ message: { text: '/party', chat: GROUP, from: { id: 1, first_name: 'Dara' } } });
+    await webhook({ message: { text: '/party reaction', chat: GROUP, from: { id: 1, first_name: 'Dara' } } });
     sent.length = 0;
     await webhook({ callback_query: { id: 'q', from: { id: 2, first_name: 'Sokha' }, game_short_name: 'arcade', message: { chat: GROUP, message_id: 777 } } });
     const url = new URL(sent.find(s => s.method === 'answerCallbackQuery').body.url);
@@ -80,7 +80,7 @@ describe('live party', () => {
   });
 
   it('cancels with fewer than 2 players', async () => {
-    await webhook({ message: { text: '/party', chat: GROUP, from: { id: 1, first_name: 'Dara' } } });
+    await webhook({ message: { text: '/party reaction', chat: GROUP, from: { id: 1, first_name: 'Dara' } } });
     const r = rooms.get(String(GROUP.id));
     join(r.obj.party, { key: 'tg-1', name: 'Dara' }, clock);
     clock = r.alarm(); await r.obj.alarm();
@@ -89,7 +89,7 @@ describe('live party', () => {
   });
 
   it('plays a full round: first tap wins, everyone sees it, results posted', async () => {
-    await webhook({ message: { text: '/party', chat: GROUP, from: { id: 1, first_name: 'Dara' } } });
+    await webhook({ message: { text: '/party reaction', chat: GROUP, from: { id: 1, first_name: 'Dara' } } });
     const r = rooms.get(String(GROUP.id));
     const a = fakeWs('tg-1', 'Dara'), b = fakeWs('tg-2', 'Sokha');
     r.sockets.push(a, b);
@@ -117,11 +117,54 @@ describe('live party', () => {
   });
 
   it('ping gets the server time back (for clock sync)', async () => {
-    await webhook({ message: { text: '/party', chat: GROUP, from: { id: 1, first_name: 'Dara' } } });
+    await webhook({ message: { text: '/party reaction', chat: GROUP, from: { id: 1, first_name: 'Dara' } } });
     const r = rooms.get(String(GROUP.id));
     const a = fakeWs('tg-1', 'Dara');
     await r.obj.webSocketMessage(a, JSON.stringify({ type: 'ping', c: 123 }));
     expect(a.inbox[0]).toEqual({ type: 'pong', c: 123, s: clock });
+  });
+
+  it('/party asks which game; tapping a choice opens that party', async () => {
+    await webhook({ message: { text: '/party', chat: GROUP, from: { id: 1, first_name: 'Dara' } } });
+    const picker = sent.find(s => s.method === 'sendMessage').body;
+    expect(picker.text).toMatch(/Pick a party game/);
+    expect(picker.reply_markup.inline_keyboard[0].map(b => b.callback_data)).toEqual(['party:reaction', 'party:battle']);
+    sent.length = 0;
+    await webhook({ callback_query: { id: 'p1', from: { id: 2, first_name: 'Sokha' }, data: 'party:battle', message: { chat: GROUP, message_id: 50 } } });
+    expect(sent.find(s => s.method === 'editMessageText').body.text).toMatch(/Sokha<\/b> picked <b>🚀 Ship Battle/);
+    expect(sent.find(s => s.method === 'sendGame').body.reply_markup.inline_keyboard[0][0].text).toBe('🚀 Join the party');
+    expect(lastText()).toMatch(/Ship Battle Party!.*lasts 90 seconds/s);
+    expect(sent.find(s => s.method === 'answerCallbackQuery').body.text).toMatch(/party on/);
+    const r = rooms.get(String(GROUP.id));
+    expect(r.obj.party.game).toBe('battle');
+    sent.length = 0;
+    await webhook({ callback_query: { id: 'p2', from: { id: 3, first_name: 'Navin' }, data: 'party:reaction', message: { chat: GROUP, message_id: 51 } } });
+    expect(lastText()).toMatch(/Ship Battle<\/b> party is already on/);
+    expect(r.obj.party.game).toBe('battle');
+  });
+
+  it('plays a Ship Battle: the room runs the arena, players shoot, KOs decide the winner', async () => {
+    await webhook({ message: { text: '/party battle', chat: GROUP, from: { id: 1, first_name: 'Dara' } } });
+    const r = rooms.get(String(GROUP.id));
+    const a = fakeWs('tg-1', 'Dara'), b = fakeWs('tg-2', 'Sokha');
+    r.sockets.push(a, b);
+    join(r.obj.party, { key: 'tg-1', name: 'Dara' }, clock); join(r.obj.party, { key: 'tg-2', name: 'Sokha' }, clock);
+    clock = r.alarm(); await r.obj.alarm();
+    expect(r.obj.party.status).toBe('running');
+    expect(r.obj.ticker).toBeTruthy();
+    // put the two ships face to face in the open and let the arena run (fast-forward the ticks by hand)
+    const sim = r.obj.battle; sim.blocks = [];
+    Object.assign(sim.ships['tg-1'], { x: 200, y: 270, a: 0, inv: 0, fireCd: 0 });
+    Object.assign(sim.ships['tg-2'], { x: 420, y: 270, a: Math.PI, inv: 0, fireCd: 9 });
+    await r.obj.webSocketMessage(b, JSON.stringify({ type: 'input', mx: 0, my: 0 }));
+    const { step } = await import('../src/party/battle.js');
+    for (let i = 0; i < 80; i++) { step(sim, 0.05); sim.ships['tg-2'].fireCd = 9; sim.ships['tg-2'].x = 420; sim.ships['tg-2'].y = 270; }
+    expect(sim.ships['tg-1'].kos).toBeGreaterThanOrEqual(1);
+    clock = r.alarm(); await r.obj.alarm();
+    expect(r.obj.ticker).toBeNull();
+    expect(r.obj.party.status).toBe('done');
+    expect(lastText()).toMatch(/🚀 <b>Ship Battle Party results/);
+    expect(lastText()).toMatch(/🥇 <b>Dara<\/b> · \d+ KOs? · knocked out 0×/);
   });
 
   it('/party in a private chat explains it is for groups', async () => {
