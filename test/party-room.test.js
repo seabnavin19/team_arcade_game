@@ -134,6 +134,34 @@ describe('live party', () => {
     r.obj.stopBattle();
   });
 
+  it('plays a Brain Race: questions arrive without answers, reveals score the fastest and first', async () => {
+    await webhook({ message: { text: '/party iq', chat: GROUP, from: { id: 1, first_name: 'Dara' } } });
+    const r = rooms.get(String(GROUP.id));
+    expect(r.obj.party.game).toBe('quiz');
+    const a = fakeWs('tg-1', 'Dara'), b = fakeWs('tg-2', 'Sokha');
+    r.sockets.push(a, b);
+    join(r.obj.party, { key: 'tg-1', name: 'Dara' }, clock); join(r.obj.party, { key: 'tg-2', name: 'Sokha' }, clock);
+    clock = r.alarm(); await r.obj.alarm();
+    r.obj.stopQuiz(); // drive the clock by hand instead of real timers
+    const q = a.inbox.find(m => m.type === 'question');
+    expect(q).toMatchObject({ i: 0, n: 8, options: expect.any(Array) });
+    expect(q).not.toHaveProperty('correct');
+    const right = r.obj.quiz[0].correct;
+    clock += 1500; await r.obj.webSocketMessage(b, JSON.stringify({ type: 'answer', i: 0, c: right }));
+    clock += 1500; await r.obj.webSocketMessage(a, JSON.stringify({ type: 'answer', i: 0, c: (right + 1) % 4 }));
+    expect(b.inbox.at(-1)).toMatchObject({ type: 'answered', count: 2, of: 2 });
+    clock = r.obj.party.startAt + 10500; r.obj.quizTick();
+    const rev = a.inbox.find(m => m.type === 'reveal');
+    expect(rev).toMatchObject({ i: 0, correct: right, firstName: 'Sokha' });
+    expect(rev.answers['tg-2']).toMatchObject({ ok: true, first: true });
+    expect(rev.answers['tg-1']).toMatchObject({ ok: false, pts: 0 });
+    clock = r.obj.party.startAt + 13200; r.obj.quizTick();
+    expect(a.inbox.filter(m => m.type === 'question').at(-1).i).toBe(1);
+    clock = r.alarm(); await r.obj.alarm();
+    expect(lastText()).toMatch(/💡 <b>Brain Race Party results/);
+    expect(lastText()).toMatch(/🥇 <b>Sokha<\/b> · [\d,]+ \(1\/8 right\)/);
+  });
+
   it('ping gets the server time back (for clock sync)', async () => {
     await webhook({ message: { text: '/party reaction', chat: GROUP, from: { id: 1, first_name: 'Dara' } } });
     const r = rooms.get(String(GROUP.id));
@@ -146,7 +174,7 @@ describe('live party', () => {
     await webhook({ message: { text: '/party', chat: GROUP, from: { id: 1, first_name: 'Dara' } } });
     const picker = sent.find(s => s.method === 'sendMessage').body;
     expect(picker.text).toMatch(/Pick a party game/);
-    expect(picker.reply_markup.inline_keyboard[0].map(b => b.callback_data)).toEqual(['party:reaction', 'party:battle']);
+    expect(picker.reply_markup.inline_keyboard.map(row => row[0].callback_data)).toEqual(['party:reaction', 'party:quiz', 'party:battle']);
     sent.length = 0;
     await webhook({ callback_query: { id: 'p1', from: { id: 2, first_name: 'Sokha' }, data: 'party:battle', message: { chat: GROUP, message_id: 50 } } });
     expect(sent.find(s => s.method === 'editMessageText').body.text).toMatch(/Sokha<\/b> picked <b>🚀 Ship Battle/);

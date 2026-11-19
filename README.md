@@ -41,7 +41,7 @@ Telegram group ──/arcade, Play──▶ Cloudflare Worker (telegram/worker.j
 
 ### 🎉 Live party (multiplayer)
 
-Send **`/party`** in the group and pick a game from the buttons, or go straight to one with **`/party battle`** or **`/party reaction`**.
+Send **`/party`** in the group and pick a game from the buttons, or go straight to one with **`/party battle`**, **`/party iq`** or **`/party reaction`**.
 The bot posts a card with a **Join the party** button and a 60-second countdown. A party needs at least 2 players, and one party runs per group at a time.
 As soon as 2 players are in, anyone in the lobby can tap **▶ Start now**. Everyone then gets a 3-second countdown instead of waiting out the full minute.
 
@@ -51,6 +51,14 @@ As soon as 2 players are in, anyone in the lobby can tap **▶ Start now**. Ever
 - Pickups appear every 12 seconds: **+** refills your shields, **R** gives 6 seconds of rapid fire.
 - **Most KOs wins.** Ties go to whoever was knocked out fewer times.
 - Controls: mouse (the ship flies toward the cursor), arrow keys / WASD, or drag anywhere on a phone.
+
+**💡 Brain Race** (8 puzzles, about 1¾ minutes, any number)
+- IQ-style puzzles: number patterns, quick maths, missing numbers, "which is largest" (fractions, decimals, %), time puzzles and odd-one-out.
+- Everyone gets the same puzzle at the same moment and has 10 seconds. **One try per puzzle.**
+- A right answer scores 500 plus up to 500 for speed, plus a 200 bonus for the **first** correct answer. A wrong answer scores 0.
+- After each puzzle the answer is revealed, along with who got it first. Puzzles are generated fresh for every party, so they never repeat.
+  The server keeps the answers to itself until the reveal, so nobody can peek.
+- Controls: tap an answer, or press 1–4.
 
 **⚡ Reaction Tap** (30 seconds, any number)
 - Everyone gets the same targets at the same moment. **The first tap on a target takes its points**, and quicker taps score more.
@@ -113,6 +121,7 @@ If the last step says it was skipped, open this address once in a browser:
 |---|---|
 | Group announcements (`top3`, `first` or `off`) | `ANNOUNCE` in `telegram/wrangler.toml` |
 | Party lobby length, minimum players, game lengths | `src/party/rules.js` |
+| Brain Race: number of puzzles, time per puzzle, puzzle types | top of `src/party/quiz.js` |
 | Ship Battle balance (speed, fire rate, shields, pickups) | top of `src/party/battle.js` |
 | Time of the Monday results post | `crons` in `telegram/wrangler.toml` (UTC) |
 | Game rules or balance | `src/games/…`. Drone Shooter's rules are in `shooter-engine.js` |
@@ -142,7 +151,7 @@ To update the games, upload a new `arcade.js` with the same name. Players get it
 
 ```bash
 npm install
-npm test                       # 89 automated tests: game rules, saving and conflicts, ranking, the Telegram server, live parties
+npm test                       # 95 automated tests: game rules, saving and conflicts, ranking, the Telegram server, live parties
 npm run build                  # dist/ (Confluence) and site/ (Telegram / GitHub Pages)
 
 node dev/local-telegram.mjs    # Telegram version with a pretend Telegram + GitHub → http://localhost:8787/play?name=Dara

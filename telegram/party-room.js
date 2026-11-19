@@ -5,6 +5,8 @@
 import { createParty, join, hit, miss, start, startNow, finish, timelineFor, publicState, isActive, MIN_PLAYERS, PARTY_SECONDS, PARTY_GAMES } from '../src/party/rules.js';
 import { createBattle, addShip, setInput, step as stepBattle, snapshot, battleStats } from '../src/party/battle.js';
 
+import { buildQuiz, phaseAt, answer as quizAnswer, questionMsg, QUESTIONS } from '../src/party/quiz.js';
+
 const TICK_MS = 50; // Ship Battle runs 20 times a second
 
 const esc = s => String(s ?? '').replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
@@ -20,6 +22,9 @@ export class PartyRoom {
     this.timeline = null;
     this.battle = null;     // live Ship Battle simulation (in memory only)
     this.ticker = null;
+    this.quiz = null;       // Brain Race questions (with answers: never sent early)
+    this.quizTicker = null;
+    this.quizSent = { q: -1, r: -1 };
   }
 
   async load() {
@@ -54,7 +59,7 @@ export class PartyRoom {
 
     if (url.pathname === '/create') {
       if (isActive(this.party)) return Response.json({ created: false, party: publicState(this.party) });
-      this.stopBattle();
+      this.stopBattle(); this.stopQuiz(); this.quiz = null; this.quizSent = { q: -1, r: -1 };
       this.party = createParty({ id: crypto.randomUUID().slice(0, 8), chat: body.chat, seed: crypto.randomUUID(), now: this.now(), joinSeconds: body.joinSeconds, game: body.game });
       this.timeline = timelineFor(this.party);
       await this.save();
@@ -85,6 +90,10 @@ export class PartyRoom {
       if (joined.ok && this.party.game === 'battle' && this.party.status === 'running') this.ensureBattle() && addShip(this.battle, user.key, user.name);
       server.send(JSON.stringify({ ...this.stateMsg(), you: user.key, joinError: joined.ok ? null : joined.reason }));
       if (joined.ok) this.broadcast(this.stateMsg());
+      if (this.party.game === 'quiz' && this.party.status === 'running' && this.ensureQuiz()) {
+        const ph = phaseAt(this.party.startAt, this.now());
+        if (ph.phase === 'question') server.send(JSON.stringify(questionMsg(this.quiz, ph)));
+      }
       return new Response(null, { status: 101, webSocket: client });
     }
     return new Response('not found', { status: 404 });
@@ -101,6 +110,16 @@ export class PartyRoom {
     if (!p) return;
     if (msg.type === 'input') {
       if (p.game === 'battle' && p.status === 'running' && this.ensureBattle()) setInput(this.battle, me.key, Number(msg.mx), Number(msg.my));
+      return;
+    }
+    if (msg.type === 'answer') {
+      if (p.game !== 'quiz' || !this.ensureQuiz()) return;
+      const r = quizAnswer(p, this.quiz, me.key, msg.i, msg.c, this.now());
+      if (r.kind === 'invalid') return;
+      if (r.kind !== 'already') await this.save();
+      ws.send(JSON.stringify({ type: 'locked', i: msg.i, c: msg.c }));
+      const answered = Object.keys(p.answers?.[msg.i] || {}).length;
+      this.broadcast({ type: 'answered', i: msg.i, count: answered, of: Object.keys(p.players).length });
       return;
     }
     if (msg.type === 'start-now') {
@@ -164,6 +183,41 @@ export class PartyRoom {
     this.battle = null;
   }
 
+  // ---------- Brain Race loop ----------
+  ensureQuiz() {
+    const p = this.party;
+    if (!p || p.game !== 'quiz') return false;
+    if (!this.quiz) this.quiz = buildQuiz(p.seed);
+    if (p.status === 'running' && !this.quizTicker) this.quizTicker = setInterval(() => this.quizTick(), 200);
+    return true;
+  }
+
+  quizTick() {
+    const p = this.party;
+    if (!p || p.status !== 'running') return;
+    const ph = phaseAt(p.startAt, this.now());
+    if (ph.phase === 'question' && this.quizSent.q < ph.i) {
+      this.quizSent.q = ph.i;
+      this.broadcast(questionMsg(this.quiz, ph));
+    }
+    if ((ph.phase === 'reveal' || (ph.phase === 'question' && ph.i > this.quizSent.r + 1)) && this.quizSent.r < (ph.phase === 'reveal' ? ph.i : ph.i - 1)) {
+      const i = ph.phase === 'reveal' ? ph.i : ph.i - 1;
+      this.quizSent.r = i;
+      const answers = p.answers?.[i] || {};
+      const first = Object.entries(answers).find(([, a]) => a.first);
+      this.broadcast({
+        type: 'reveal', i, n: QUESTIONS, correct: this.quiz[i].correct,
+        answers: Object.fromEntries(Object.entries(answers).map(([k, a]) => [k, { ok: a.ok, pts: a.pts, first: a.first }])),
+        firstName: first ? p.players[first[0]]?.name : null, party: publicState(p),
+      });
+    }
+  }
+
+  stopQuiz() {
+    if (this.quizTicker) clearInterval(this.quizTicker);
+    this.quizTicker = null;
+  }
+
   // ---------- timers ----------
   async alarm() {
     await this.load();
@@ -175,6 +229,7 @@ export class PartyRoom {
       this.broadcast(this.stateMsg());
       if (status === 'running') {
         if (p.game === 'battle') { this.ensureBattle(); this.broadcast({ type: 'snap', t: this.now(), ...snapshot(this.battle) }); }
+        if (p.game === 'quiz') { this.quizSent = { q: -1, r: -1 }; this.ensureQuiz(); this.quizTick(); }
         await this.ctx.storage.setAlarm(p.game === 'battle' ? p.endAt : p.endAt + 1500); // taps get a little grace
       } else {
         const names = Object.values(p.players).map(x => x.name);
@@ -185,12 +240,15 @@ export class PartyRoom {
       }
     } else if (p.status === 'running') {
       if (p.game === 'battle') { this.copyBattleStats(); this.stopBattle(); }
+      if (p.game === 'quiz') { this.ensureQuiz(); this.quizTick(); this.stopQuiz(); }
       const res = finish(p);
       await this.save();
       this.broadcast(this.stateMsg());
       const g = PARTY_GAMES[p.game || 'reaction'];
       const detail = r => (p.game === 'battle'
         ? `${r.kos} ${r.kos === 1 ? 'KO' : 'KOs'} · knocked out ${r.downs}×`
+        : p.game === 'quiz'
+        ? `${r.score.toLocaleString('en-US')} (${r.hits}/${QUESTIONS} right)`
         : `${r.score.toLocaleString('en-US')} (${r.hits} hits${r.fakes ? `, ${r.fakes} fakes` : ''})`);
       const lines = res.slice(0, 10).map(r => `${MEDALS[r.place - 1] || `${r.place}.`} <b>${esc(r.name)}</b> · ${detail(r)}`);
       await this.tg('sendMessage', {
