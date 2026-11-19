@@ -73,7 +73,9 @@ jobs:
           ARCADE_SECRET: ${{ secrets.ARCADE_SECRET }}
         run: |
           echo "Worker: $URL"
-          curl -fsS "$URL/setup?key=$ARCADE_SECRET" | tee /tmp/setup.json
+          # A brand-new workers.dev address can answer 404 for a minute or two
+          # after the first deploy, so keep trying for up to ~2 minutes.
+          curl -fsS --retry 12 --retry-delay 10 --retry-all-errors "$URL/setup?key=$ARCADE_SECRET" | tee /tmp/setup.json
           echo
           grep -q '"ok":true' /tmp/setup.json
       - name: Not set up yet
