@@ -43,6 +43,7 @@ Telegram group ──/arcade, Play──▶ Cloudflare Worker (telegram/worker.j
 
 Send **`/party`** in the group and pick a game from the buttons, or go straight to one with **`/party battle`** or **`/party reaction`**.
 The bot posts a card with a **Join the party** button and a 60-second countdown. A party needs at least 2 players, and one party runs per group at a time.
+As soon as 2 players are in, anyone in the lobby can tap **▶ Start now**. Everyone then gets a 3-second countdown instead of waiting out the full minute.
 
 **🚀 Ship Battle** (90 seconds, 2–8 players)
 - Everyone flies a ship in one arena with cover blocks. Your ship **fires forward on its own**, so you aim by steering.
@@ -141,7 +142,7 @@ To update the games, upload a new `arcade.js` with the same name. Players get it
 
 ```bash
 npm install
-npm test                       # 86 automated tests: game rules, saving and conflicts, ranking, the Telegram server, live parties
+npm test                       # 89 automated tests: game rules, saving and conflicts, ranking, the Telegram server, live parties
 npm run build                  # dist/ (Confluence) and site/ (Telegram / GitHub Pages)
 
 node dev/local-telegram.mjs    # Telegram version with a pretend Telegram + GitHub → http://localhost:8787/play?name=Dara

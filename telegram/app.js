@@ -122,7 +122,7 @@ export function createHandler({ fetch: fetchImpl = (...a) => fetch(...a), now = 
     const secs = Math.round((made.party.startAt - now()) / 1000);
     await c.tg('sendMessage', {
       chat_id: chat.id, parse_mode: 'HTML', ...thread,
-      text: [`${g.emoji} <b>${g.title} Party!</b> Starts in ${secs} seconds and lasts ${g.seconds} seconds.`, `Tap <b>Join the party</b> on the card above. ${g.pitch}`, `Needs at least ${MIN_PLAYERS} players${g.maxPlayers < 50 ? `, up to ${g.maxPlayers}` : ''}.`].join('\n'),
+      text: [`${g.emoji} <b>${g.title} Party!</b> Starts in ${secs} seconds and lasts ${g.seconds} seconds.`, `Tap <b>Join the party</b> on the card above. ${g.pitch}`, `Needs at least ${MIN_PLAYERS} players${g.maxPlayers < 50 ? `, up to ${g.maxPlayers}` : ''}. Once ${MIN_PLAYERS} are in, anyone in the lobby can tap <b>Start now</b>.`].join('\n'),
     });
     return true;
   }

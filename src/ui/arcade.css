@@ -147,3 +147,6 @@ body.ta-fullpage #team-arcade .ta { max-width: 1040px; margin: 0 auto; border: 0
 #team-arcade .ta-party-final li.is-me { background: rgba(45,226,230,.12); }
 #team-arcade .ta .ta-party-controls { max-width: 520px; margin: 8px auto 0; color: var(--muted); font-size: 12px; }
 #team-arcade .ta-party .ta-party-game canvas { cursor: crosshair; }
+#team-arcade .ta .ta-party-start { margin: 4px auto 0; padding: 11px 26px; font-size: 16px; background: var(--lime); box-shadow: 0 0 22px rgba(156,255,87,.4); }
+#team-arcade .ta .ta-party-start:disabled { opacity: .5; cursor: default; }
+#team-arcade .ta-party-note { min-height: 1.4em; margin-top: 10px; color: var(--yellow); font-weight: 700; font-size: 13px; }

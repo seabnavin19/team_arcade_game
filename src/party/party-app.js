@@ -26,6 +26,8 @@ export function createPartyApp(root, { api, token, sound, onExit, WebSocketImpl 
         <div class="ta-party-count" data-count>…</div>
         <div class="ta-party-sub" data-sub>Connecting…</div>
         <ul class="ta-party-players" data-players></ul>
+        <button class="ta-btn ta-party-start" type="button" data-startnow hidden>▶ Start now</button>
+        <div class="ta-party-note" data-note></div>
         <p class="ta-party-rules" data-rules></p>
         <p class="ta-party-controls" data-controls></p>
       </section>
@@ -37,10 +39,11 @@ export function createPartyApp(root, { api, token, sound, onExit, WebSocketImpl 
       <section class="ta-party-results" data-results hidden></section>
     </div>`;
   const $ = s => root.querySelector(`[data-${s}]`);
-  const el = { title: $('title'), rules: $('rules'), controls: $('controls'), lobby: $('lobby'), count: $('count'), sub: $('sub'), players: $('players'), game: $('game'), canvas: $('canvas'), overlay: $('overlay'), board: $('board'), results: $('results'), sound: $('sound') };
+  const el = { startnow: $('startnow'), note: $('note'), title: $('title'), rules: $('rules'), controls: $('controls'), lobby: $('lobby'), count: $('count'), sub: $('sub'), players: $('players'), game: $('game'), canvas: $('canvas'), overlay: $('overlay'), board: $('board'), results: $('results'), sound: $('sound') };
 
   const renderSound = () => { el.sound.innerHTML = sound.on ? ICONS.sound : ICONS.muted; el.sound.title = sound.on ? 'Sound on' : 'Sound off'; };
   el.sound.addEventListener('click', () => { sound.toggle(); renderSound(); });
+  el.startnow.addEventListener('click', () => { el.startnow.disabled = true; send({ type: 'start-now' }); });
   renderSound();
 
   // ---------- state ----------
@@ -92,6 +95,8 @@ export function createPartyApp(root, { api, token, sound, onExit, WebSocketImpl 
       } else if (m.kind === 'fake' && m.key === me && tg) {
         parts.burst(tg.x, tg.y, C.red, 18); floats.add(tg.x, tg.y - 12, `${m.points}`, C.red); sound.bad();
       }
+    } else if (m.type === 'notice') {
+      el.note.textContent = m.text; el.startnow.disabled = false;
     } else if (m.type === 'snap') {
       battle?.onSnap(m);
       liveBattleScores(m);
@@ -145,7 +150,12 @@ export function createPartyApp(root, { api, token, sound, onExit, WebSocketImpl 
     if (party) {
       const list = party.players.map(pl => `<li style="--c:${color(pl.key)}" class="${pl.key === me ? 'is-me' : ''}">${esc(pl.name)}</li>`).join('');
       el.players.innerHTML = list || '<li class="ta-muted">Nobody yet…</li>';
-      el.sub.textContent = `${party.players.length} ${party.players.length === 1 ? 'player' : 'players'} in · needs at least 2`;
+      const n = party.players.length;
+      const inLobby = party.status === 'lobby';
+      const startingSoon = inLobby && party.startedBy;
+      el.sub.textContent = `${n} ${n === 1 ? 'player' : 'players'} in · needs at least 2`;
+      el.startnow.hidden = !(inLobby && !startingSoon && n >= 2 && party.players.some(p => p.key === me));
+      el.note.textContent = startingSoon ? `${party.startedBy} started the party!` : (inLobby && n < 2 ? 'Waiting for one more player…' : '');
       const val = pl => (party.game === 'battle' ? `${pl.kos || 0} KO` : fmt(pl.score));
       el.board.innerHTML = party.players.map(pl => `
         <li class="${pl.key === me ? 'is-me' : ''}" style="--c:${color(pl.key)}"><span class="ta-place">${pl.place}</span><span class="ta-name">${esc(pl.name)}</span><span class="ta-score">${val(pl)}</span></li>`).join('');

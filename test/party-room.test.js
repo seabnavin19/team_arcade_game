@@ -116,6 +116,24 @@ describe('live party', () => {
     expect(lastText()).toMatch(/Dara<\/b> wins the party/);
   });
 
+  it('Start now moves the start up and re-arms the timer for everyone', async () => {
+    await webhook({ message: { text: '/party battle', chat: GROUP, from: { id: 1, first_name: 'Dara' } } });
+    const r = rooms.get(String(GROUP.id));
+    const a = fakeWs('tg-1', 'Dara'), b = fakeWs('tg-2', 'Sokha');
+    r.sockets.push(a, b);
+    join(r.obj.party, { key: 'tg-1', name: 'Dara' }, clock);
+    await r.obj.webSocketMessage(a, JSON.stringify({ type: 'start-now' }));
+    expect(a.inbox.at(-1)).toMatchObject({ type: 'notice', text: expect.stringMatching(/at least 2/) });
+    join(r.obj.party, { key: 'tg-2', name: 'Sokha' }, clock);
+    clock += 5000;
+    await r.obj.webSocketMessage(b, JSON.stringify({ type: 'start-now' }));
+    expect(r.alarm()).toBe(clock + 3000);
+    expect(a.inbox.at(-1).party).toMatchObject({ startAt: clock + 3000, startedBy: 'Sokha' });
+    clock = r.alarm(); await r.obj.alarm();
+    expect(r.obj.party.status).toBe('running');
+    r.obj.stopBattle();
+  });
+
   it('ping gets the server time back (for clock sync)', async () => {
     await webhook({ message: { text: '/party reaction', chat: GROUP, from: { id: 1, first_name: 'Dara' } } });
     const r = rooms.get(String(GROUP.id));

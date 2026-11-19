@@ -2,7 +2,7 @@
 // Players connect with WebSockets; alarms start and end the round; the room
 // posts the lobby, a cancel notice, and the results in the group.
 
-import { createParty, join, hit, miss, start, finish, timelineFor, publicState, isActive, MIN_PLAYERS, PARTY_SECONDS, PARTY_GAMES } from '../src/party/rules.js';
+import { createParty, join, hit, miss, start, startNow, finish, timelineFor, publicState, isActive, MIN_PLAYERS, PARTY_SECONDS, PARTY_GAMES } from '../src/party/rules.js';
 import { createBattle, addShip, setInput, step as stepBattle, snapshot, battleStats } from '../src/party/battle.js';
 
 const TICK_MS = 50; // Ship Battle runs 20 times a second
@@ -101,6 +101,14 @@ export class PartyRoom {
     if (!p) return;
     if (msg.type === 'input') {
       if (p.game === 'battle' && p.status === 'running' && this.ensureBattle()) setInput(this.battle, me.key, Number(msg.mx), Number(msg.my));
+      return;
+    }
+    if (msg.type === 'start-now') {
+      const r = startNow(p, me.key, this.now());
+      if (!r.ok) { ws.send(JSON.stringify({ type: 'notice', text: r.reason })); return; }
+      await this.save();
+      await this.ctx.storage.setAlarm(p.startAt);
+      this.broadcast(this.stateMsg());
       return;
     }
     if (msg.type === 'hit') {

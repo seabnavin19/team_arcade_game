@@ -72,3 +72,27 @@ describe('party rules', () => {
     expect(join(p, B, p.startAt).ok).toBe(false);
   });
 });
+
+import { startNow } from '../src/party/rules.js';
+describe('start now', () => {
+  const T = 5_000_000;
+  it('starts in 3 seconds once 2 players are in, keeping the round length', () => {
+    const p = createParty({ id: 'p', chat: -1, seed: 's', now: T, game: 'battle' });
+    join(p, A, T);
+    expect(startNow(p, 'a', T + 5000)).toMatchObject({ ok: false, reason: expect.stringMatching(/at least 2/) });
+    join(p, B, T + 6000);
+    const length = p.endAt - p.startAt;
+    expect(startNow(p, 'b', T + 7000).ok).toBe(true);
+    expect(p.startAt).toBe(T + 10000);
+    expect(p.endAt - p.startAt).toBe(length);
+    expect(publicState(p).startedBy).toBe('Sokha');
+    expect(startNow(p, 'a', T + 7500).ok).toBe(false); // already starting
+  });
+  it('only players in the lobby can start it', () => {
+    const p = createParty({ id: 'p', chat: -1, seed: 's', now: T });
+    join(p, A, T); join(p, B, T);
+    expect(startNow(p, 'stranger', T).ok).toBe(false);
+    p.status = 'running';
+    expect(startNow(p, 'a', T).ok).toBe(false);
+  });
+});

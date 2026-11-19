@@ -68,6 +68,22 @@ export function miss(p, userKey) {
   return { kind: 'miss', points: -MISS_PENALTY };
 }
 
+export const START_NOW_SECONDS = 3; // countdown after someone taps "Start now"
+
+/** A player in the lobby asks to start early. Needs enough players. */
+export function startNow(p, userKey, now) {
+  if (!p || p.status !== 'lobby') return { ok: false, reason: 'The party is not in the lobby.' };
+  if (!p.players[userKey]) return { ok: false, reason: 'Join the party first.' };
+  if (Object.keys(p.players).length < MIN_PLAYERS) return { ok: false, reason: `Needs at least ${MIN_PLAYERS} players.` };
+  const startAt = now + START_NOW_SECONDS * 1000;
+  if (startAt >= p.startAt) return { ok: false, reason: 'Already starting.' };
+  const length = p.endAt - p.startAt;
+  p.startAt = startAt;
+  p.endAt = startAt + length;
+  p.startedBy = p.players[userKey].name;
+  return { ok: true };
+}
+
 /** Called when the lobby ends. */
 export function start(p) {
   if (p.status !== 'lobby') return p.status;
@@ -90,6 +106,6 @@ export function results(p) {
 
 /** What clients are allowed to see. */
 export const publicState = p => p && ({
-  id: p.id, game: p.game || 'reaction', status: p.status, seed: p.seed, startAt: p.startAt, endAt: p.endAt, claimed: p.claimed,
+  id: p.id, game: p.game || 'reaction', status: p.status, seed: p.seed, startAt: p.startAt, endAt: p.endAt, claimed: p.claimed, startedBy: p.startedBy || null,
   players: results(p).map(({ key, name, score, hits, fakes, kos, downs, place }) => ({ key, name, score, hits, fakes, kos, downs, place })),
 });
