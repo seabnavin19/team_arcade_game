@@ -11,7 +11,7 @@ import { createRng } from '../core/rng.js';
 export const W = 800, H = 480, TOP = 60;   // arena below the HUD bar
 export const DURATION = 90;                // seconds
 export const MAX_PLAYERS = 8;
-export const SHIP_R = 14, SPEED = 210, MAX_HP = 3;
+export const SHIP_R = 19, SPEED = 210, MAX_HP = 3;
 export const BULLET_SPEED = 430, BULLET_LIFE = 1.15, FIRE_EVERY = 0.38, RAPID_EVERY = 0.17, RAPID_SECONDS = 6;
 export const RESPAWN_AFTER = 2, SPAWN_SHIELD = 2;
 export const PICKUP_EVERY = 12;

@@ -191,6 +191,7 @@ export function createPartyApp(root, { api, token, sound, onExit, WebSocketImpl 
     const status = fatal ? 'error' : party?.status || 'connecting';
     el.lobby.hidden = !(status === 'lobby' || status === 'connecting');
     el.game.hidden = status !== 'running';
+    root.querySelector('[data-ta]')?.classList.toggle('is-playing', status === 'running');
     el.results.hidden = !(status === 'done' || status === 'cancelled' || status === 'error');
 
     if (party) {

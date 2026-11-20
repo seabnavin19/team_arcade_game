@@ -99,10 +99,10 @@ export function createBattleView({ ctx, input, send, serverNow, getParty, getMe,
     ctx.fill(); ctx.stroke();
     ctx.restore();
     ctx.save();
-    ctx.font = '700 11px system-ui, sans-serif'; ctx.textAlign = 'center'; ctx.fillStyle = me ? C.text : col;
+    ctx.font = '700 13px system-ui, sans-serif'; ctx.textAlign = 'center'; ctx.fillStyle = me ? C.text : col;
     const nearTop = y - SHIP_R - 10 < TOP + 12; // keep the label out from under the score bar
-    ctx.fillText(name.slice(0, 12), x, nearTop ? y + SHIP_R + 24 : y - SHIP_R - 10);
-    for (let i = 0; i < MAX_HP; i++) { ctx.fillStyle = i < hp ? col : 'rgba(141,136,179,.3)'; ctx.fillRect(x - 13 + i * 9, y + SHIP_R + 6, 7, 3); }
+    ctx.fillText(name.slice(0, 12), x, nearTop ? y + SHIP_R + 26 : y - SHIP_R - 10);
+    for (let i = 0; i < MAX_HP; i++) { ctx.fillStyle = i < hp ? col : 'rgba(141,136,179,.3)'; ctx.fillRect(x - 16 + i * 11, y + SHIP_R + 6, 9, 4); }
     ctx.restore();
   }
 

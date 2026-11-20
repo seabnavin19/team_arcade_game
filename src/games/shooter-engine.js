@@ -4,11 +4,11 @@
 
 import { createRng } from '../core/rng.js';
 
-export const W = 800, H = 480, HUD = 56;
+export const W = 800, H = 640, HUD = 56;   // tall field: more room to dodge
 export const MAX_TIME = 240; // safety cap: the boss leaves after 4 minutes
 export const LIVES = 3;
 export const WAVES = 6;
-const PLAYER_Y_MIN = 250, PLAYER_Y_MAX = H - 24;
+const PLAYER_Y_MIN = H - 260, PLAYER_Y_MAX = H - 36;
 
 export const ENEMY = {
   scout: { hp: 1, r: 14, points: 100 },
@@ -61,7 +61,7 @@ export const multiplierFor = streak => Math.min(5, 1 + Math.floor(streak / 3));
 export function createShooter(seed) {
   const s = {
     seed, waves: buildWaves(seed), time: 0, score: 0, lives: LIVES, streak: 0, lastKill: -99,
-    player: { x: W / 2, y: H - 50, r: 11, inv: 0, shield: false, spreadUntil: 0, rapidUntil: 0, fireCd: 0.5 },
+    player: { x: W / 2, y: H - 64, r: 16, inv: 0, shield: false, spreadUntil: 0, rapidUntil: 0, fireCd: 0.5 },
     bullets: [], enemyBullets: [], enemies: [], powerups: [],
     phase: 'banner', wave: 0, waveTime: 0, spawnIdx: 0, bannerUntil: 1.8, nextId: 1,
     boss: null, kills: 0, over: false, won: false, events: [],
@@ -175,7 +175,7 @@ export function step(s, dt, controls = {}) {
     const d = Math.hypot(tx - p.x, ty - p.y), max = 560 * dt;
     if (d > 0.5) { const m = Math.min(1, max / d); p.x += (tx - p.x) * m; p.y += (ty - p.y) * m; }
   }
-  p.x = Math.max(18, Math.min(W - 18, p.x));
+  p.x = Math.max(26, Math.min(W - 26, p.x));
   p.y = Math.max(PLAYER_Y_MIN, Math.min(PLAYER_Y_MAX, p.y));
   p.inv = Math.max(0, p.inv - dt);
 

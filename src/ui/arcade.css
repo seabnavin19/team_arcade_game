@@ -88,8 +88,8 @@
 #team-arcade .ta-stage-title { font-weight: 800; font-size: 16px; }
 #team-arcade .ta-stage-hint { margin-left: auto; color: var(--muted); font-size: 12px; }
 #team-arcade .ta-stage .ta-btn { margin-top: 0; padding: 7px 12px; }
-#team-arcade .ta-canvas-wrap { position: relative; width: 100%; max-width: min(960px, calc((100vh - 110px) * 800 / 480)); margin: 0 auto; }
-#team-arcade .ta-stage:fullscreen .ta-canvas-wrap { max-width: min(100%, calc((100vh - 70px) * 800 / 480)); }
+#team-arcade .ta-canvas-wrap { position: relative; width: 100%; max-width: min(1280px, calc((100vh - 90px) * var(--ar, 1.6667))); margin: 0 auto; }
+#team-arcade .ta-stage:fullscreen .ta-canvas-wrap { max-width: min(100%, calc((100vh - 70px) * var(--ar, 1.6667))); }
 #team-arcade canvas { display: block; width: 100%; height: auto; border-radius: 12px; border: 1px solid var(--line); cursor: crosshair; outline: none; touch-action: none; user-select: none; }
 #team-arcade .ta-overlay { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; background: rgba(12,10,29,.55); border-radius: 12px; }
 #team-arcade .ta-overlay:empty { display: none; }
@@ -127,6 +127,35 @@ body.ta-fullpage #team-arcade .ta { max-width: 1040px; margin: 0 auto; border: 0
 }
 #team-arcade .ta-rotate { display: none; margin: 14px 0 0; text-align: center; color: var(--muted); font-size: 13px; }
 @media (max-width: 560px) and (orientation: portrait) { #team-arcade .ta-rotate { display: block; } }
+
+/* While a game runs, give the play area as much of the screen as possible. */
+body.ta-fullpage #team-arcade .ta.is-playing { max-width: 1400px; }
+@media (max-width: 560px), (max-height: 560px) {
+  #team-arcade .ta.is-playing { padding: 6px; border-radius: 0; }
+  #team-arcade .ta.is-playing > .ta-top { display: none; }
+  #team-arcade .ta.is-playing .ta-stage, #team-arcade .ta.is-playing .ta-party-game { margin-top: 0; }
+  #team-arcade .ta.is-playing .ta-stage-bar { margin-bottom: 4px; }
+  #team-arcade .ta.is-playing .ta-stage-title { font-size: 14px; }
+  #team-arcade .ta.is-playing .ta-stage-hint { display: none; }
+  #team-arcade .ta.is-playing .ta-stage .ta-btn, #team-arcade .ta.is-playing .ta-iconbtn { padding: 4px 10px; height: 30px; }
+  #team-arcade .ta.is-playing .ta-iconbtn { width: 30px; padding: 0; }
+  #team-arcade .ta.is-playing canvas { border-radius: 8px; }
+  #team-arcade .ta.is-playing .ta-stage .ta-canvas-wrap { max-width: min(100%, calc((100vh - 50px) * var(--ar, 1.6667))); }
+  #team-arcade .ta.is-playing .ta-party-game .ta-canvas-wrap { max-width: min(100%, calc((100vh - 14px) * var(--ar, 1.6667))); }
+  @supports (height: 100dvh) {
+    #team-arcade .ta.is-playing .ta-stage .ta-canvas-wrap { max-width: min(100%, calc((100dvh - 50px) * var(--ar, 1.6667))); }
+    #team-arcade .ta.is-playing .ta-party-game .ta-canvas-wrap { max-width: min(100%, calc((100dvh - 14px) * var(--ar, 1.6667))); }
+  }
+}
+
+@media (max-height: 560px) and (orientation: landscape) {
+  /* phone held sideways: put Quit / full screen in a slim column beside the game so the game gets the full height */
+  #team-arcade .ta.is-playing .ta-stage { display: flex; align-items: flex-start; gap: 6px; }
+  #team-arcade .ta.is-playing .ta-stage-bar { flex-direction: column; margin: 0; order: 2; }
+  #team-arcade .ta.is-playing .ta-stage-title, #team-arcade .ta.is-playing .ta-stage .ta-rotate { display: none; }
+  #team-arcade .ta.is-playing .ta-stage .ta-canvas-wrap { flex: 1; max-width: calc((100vh - 14px) * var(--ar, 1.6667)); }
+  @supports (height: 100dvh) { #team-arcade .ta.is-playing .ta-stage .ta-canvas-wrap { max-width: calc((100dvh - 14px) * var(--ar, 1.6667)); } }
+}
 
 /* Live party */
 #team-arcade .ta-party-lobby { text-align: center; padding: 26px 10px 10px; }

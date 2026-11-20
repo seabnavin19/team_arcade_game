@@ -146,6 +146,7 @@ export function createApp(root, { store, user, sound, offline = false, touchOnly
     const dpr = Math.min(2, window.devicePixelRatio || 1);
     el.canvas.width = game.width * dpr; el.canvas.height = game.height * dpr;
     el.canvas.style.aspectRatio = `${game.width} / ${game.height}`;
+    el.canvas.parentElement.style.setProperty('--ar', String(game.width / game.height)); // lets the CSS size each game to the screen
     const ctx = el.canvas.getContext('2d');
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     return ctx;

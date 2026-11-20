@@ -8,9 +8,11 @@ import { W, H, HUD, WAVES, BOSS_HP, createShooter, step } from './shooter-engine
 const ENEMY_COLOR = { scout: C.magenta, striker: C.yellow, gunner: C.lime };
 const POWER = { spread: { color: C.yellow, label: 'S' }, rapid: { color: C.cyan, label: 'R' }, shield: { color: C.lime, label: '◯' } };
 
+export const SHIP_SCALE = 1.8; // drawn bigger than the original sprite so it's easy to see and steer on phones
+
 export function drawShip(ctx, x, y, t, blink) {
   if (blink) return;
-  ctx.save(); ctx.translate(x, y);
+  ctx.save(); ctx.translate(x, y); ctx.scale(SHIP_SCALE, SHIP_SCALE);
   // engine flame
   const f = 8 + Math.sin(t * 40) * 3;
   ctx.fillStyle = C.yellow; ctx.globalAlpha = 0.8;
@@ -159,7 +161,7 @@ export default {
         const p = s.player;
         if (s.lives > 0) {
           drawShip(ctx, p.x, p.y, t, p.inv > 0 && Math.floor(t * 14) % 2 === 0);
-          if (p.shield) { ctx.save(); ctx.strokeStyle = C.lime; ctx.globalAlpha = 0.7 + Math.sin(t * 6) * 0.2; ctx.lineWidth = 2; ctx.shadowColor = C.lime; ctx.shadowBlur = 12; ctx.beginPath(); ctx.arc(p.x, p.y, 24, 0, Math.PI * 2); ctx.stroke(); ctx.restore(); }
+          if (p.shield) { ctx.save(); ctx.strokeStyle = C.lime; ctx.globalAlpha = 0.7 + Math.sin(t * 6) * 0.2; ctx.lineWidth = 2; ctx.shadowColor = C.lime; ctx.shadowBlur = 12; ctx.beginPath(); ctx.arc(p.x, p.y, 40, 0, Math.PI * 2); ctx.stroke(); ctx.restore(); }
         }
         parts.draw(ctx); floats.draw(ctx);
 

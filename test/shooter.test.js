@@ -49,8 +49,8 @@ describe('drone shooter', () => {
   });
   it('winning adds the boss and life bonus', () => {
     const s = createShooter('x'); s.lives = 2;
-    s.phase = 'boss'; s.boss = { x: 400, y: 200, r: 46, hp: 1, age: 0, fireCd: 9, minionCd: 9 };
-    s.player.x = 400; s.player.y = 260; s.player.fireCd = 0;
+    s.phase = 'boss'; s.boss = { x: 400, y: 360, r: 46, hp: 1, age: 0, fireCd: 9, minionCd: 9 };
+    s.player.x = 400; s.player.y = 420; s.player.fireCd = 0;
     const before = s.score;
     for (let i = 0; i < 30 && !s.over; i++) step(s, 1 / 60, {});
     expect(s.won).toBe(true);
