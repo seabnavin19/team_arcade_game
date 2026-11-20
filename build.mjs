@@ -1,5 +1,6 @@
 import { build } from 'esbuild';
 import { readFileSync, writeFileSync, mkdirSync, copyFileSync, existsSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 
 const pkg = JSON.parse(readFileSync('package.json', 'utf8'));
 await build({
@@ -60,7 +61,10 @@ await build({
   banner: { js: `/* Team Arcade (Telegram) v${pkg.version} */` },
   outfile: 'site/arcade-telegram.js',
 });
-copyFileSync('web/index.html', 'site/index.html');
+// Load the game by a version code that changes with every build, so phones
+// never keep running an old game after an update.
+const version = createHash('sha256').update(readFileSync('site/arcade-telegram.js')).digest('hex').slice(0, 10);
+writeFileSync('site/index.html', readFileSync('web/index.html', 'utf8').replace('./arcade-telegram.js', `./arcade-telegram.js?v=${version}`));
 if (existsSync('web/cover.png')) copyFileSync('web/cover.png', 'site/cover.png');
 // The Confluence files are published too, so they're easy to download.
 for (const f of ['arcade.js', 'loader-snippet.html', 'demo.html']) copyFileSync(`dist/${f}`, `site/confluence/${f}`);

@@ -124,6 +124,7 @@ describe('webhook', () => {
     const { url, t } = await tapPlay(dara);
     expect(url.origin + url.pathname).toBe(ENV.GAME_URL);
     expect(url.searchParams.get('api')).toBe(ORIGIN);
+    expect(url.searchParams.get('v')).toBe(String(Math.floor(NOW / 60000))); // fresh page, not a cached one
     const claims = await verify(keys.tokenKey, t, NOW);
     expect(claims).toMatchObject({ typ: 's', u: 11, n: 'Dara S.', c: GROUP.id });
     expect(world.read(CHATS_PATH).chats[GROUP.id].title).toBe('Dev team');

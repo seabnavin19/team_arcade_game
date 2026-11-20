@@ -167,7 +167,8 @@ export function createHandler({ fetch: fetchImpl = (...a) => fetch(...a), now = 
         if (party) claims.p = party.id;
       }
       const t = await sign(c.keys.tokenKey, claims);
-      const url = `${c.env.GAME_URL}?api=${encodeURIComponent(origin)}#t=${t}${claims.p ? '&party=1' : ''}`;
+      // v= changes every minute so the phone fetches a fresh page (which loads the newest game) instead of a cached one
+      const url = `${c.env.GAME_URL}?api=${encodeURIComponent(origin)}&v=${Math.floor(now() / 60000)}#t=${t}${claims.p ? '&party=1' : ''}`;
       ctx.waitUntil(rememberChat(c, chat).catch(e => console.log('rememberChat', e.message)));
       return c.tg('answerCallbackQuery', { callback_query_id: cq.id, url });
     }

@@ -149,6 +149,16 @@ export function createPartyApp(root, { api, token, sound, onExit, WebSocketImpl 
     if (!p) return;
     const first = !party || party.id !== p.id;
     party = p;
+    if (first && !PARTY_GAMES[p.game]) {
+      // The server started a game this copy of the page doesn't know: it's out of date.
+      fatal = 'This party uses a game your screen doesn’t have yet. Tap Reload to get the newest version.';
+      render();
+      const btn = document.createElement('button');
+      btn.className = 'ta-btn'; btn.type = 'button'; btn.textContent = 'Reload';
+      btn.addEventListener('click', () => { const u = new URL(location.href); u.searchParams.set('v', String(Date.now())); location.replace(u.toString()); });
+      el.results.querySelector('.ta-result-actions')?.prepend(btn);
+      return;
+    }
     if (first) {
       timeline = timelineFor(p); hidden.clear();
       const g = PARTY_GAMES[p.game] || PARTY_GAMES.reaction;
