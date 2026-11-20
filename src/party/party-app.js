@@ -3,6 +3,7 @@
 import { timelineFor, PARTY_GAMES } from './rules.js';
 import { createBattleView } from './battle-view.js';
 import { createQuizView } from './quiz-view.js';
+import { createSnakeView } from './snake-view.js';
 import { QUESTIONS } from './quiz.js';
 import { radiusAt, W, H, DURATION } from '../games/reaction.js';
 import { createLoop } from '../core/loop.js';
@@ -36,13 +37,19 @@ export function createPartyApp(root, { api, token, sound, onExit, WebSocketImpl 
       <section class="ta-party-game" data-game hidden>
         <div class="ta-canvas-wrap" data-canvaswrap><canvas data-canvas tabindex="0"></canvas><div class="ta-overlay" data-overlay></div></div>
         <div class="ta-quiz" data-quiz hidden></div>
+        <div class="ta-dpad" data-dpad hidden>
+          <button type="button" data-d="up" aria-label="Up">▲</button>
+          <button type="button" data-d="left" aria-label="Left">◀</button>
+          <button type="button" data-d="right" aria-label="Right">▶</button>
+          <button type="button" data-d="down" aria-label="Down">▼</button>
+        </div>
         <ol class="ta-party-board" data-board></ol>
         <p class="ta-rotate">Tip: turn your phone sideways for a bigger game.</p>
       </section>
       <section class="ta-party-results" data-results hidden></section>
     </div>`;
   const $ = s => root.querySelector(`[data-${s}]`);
-  const el = { canvaswrap: $('canvaswrap'), quiz: $('quiz'), startnow: $('startnow'), note: $('note'), title: $('title'), rules: $('rules'), controls: $('controls'), lobby: $('lobby'), count: $('count'), sub: $('sub'), players: $('players'), game: $('game'), canvas: $('canvas'), overlay: $('overlay'), board: $('board'), results: $('results'), sound: $('sound') };
+  const el = { dpad: $('dpad'), canvaswrap: $('canvaswrap'), quiz: $('quiz'), startnow: $('startnow'), note: $('note'), title: $('title'), rules: $('rules'), controls: $('controls'), lobby: $('lobby'), count: $('count'), sub: $('sub'), players: $('players'), game: $('game'), canvas: $('canvas'), overlay: $('overlay'), board: $('board'), results: $('results'), sound: $('sound') };
 
   const renderSound = () => { el.sound.innerHTML = sound.on ? ICONS.sound : ICONS.muted; el.sound.title = sound.on ? 'Sound on' : 'Sound off'; };
   el.sound.addEventListener('click', () => { sound.toggle(); renderSound(); });
@@ -118,9 +125,13 @@ export function createPartyApp(root, { api, token, sound, onExit, WebSocketImpl 
   let lastBoard = 0;
   function liveBattleScores(m) {
     if (!party) return;
-    for (const sh of m.ships) {
+    if (m.ships) for (const sh of m.ships) {
       const pl = party.players.find(p => p.key === m.who[sh[0]]);
       if (pl) { pl.kos = sh[8]; pl.downs = sh[9]; pl.score = sh[8]; }
+    }
+    if (m.snakes) for (const sn of m.snakes) {
+      const pl = party.players.find(p => p.key === m.who[sn[0]]);
+      if (pl) { pl.score = sn[2]; pl.downs = pl.downs || 0; }
     }
     party.players.sort((a, b) => b.score - a.score || a.downs - b.downs);
     let place = 0;
@@ -140,11 +151,16 @@ export function createPartyApp(root, { api, token, sound, onExit, WebSocketImpl 
       el.controls.textContent = p.game === 'battle'
         ? 'Controls: move with the mouse, arrow keys or WASD. On a phone, drag anywhere to steer.'
         : p.game === 'quiz' ? 'Controls: tap an answer, or press 1–4. You get one try per puzzle.'
+        : p.game === 'snake' ? 'Controls: arrow keys or WASD. On a phone, swipe on the board or use the arrow buttons.'
         : 'Controls: click or tap the targets.';
       el.canvaswrap.hidden = p.game === 'quiz';
       el.quiz.hidden = p.game !== 'quiz';
       if (p.game === 'quiz' && !quizView) quizView = createQuizView(el.quiz, { send, serverNow, getMe: () => me, sound, input });
       if (p.game === 'battle' && !battle) battle = createBattleView({ ctx, input, send, serverNow, getParty: () => party, getMe: () => me, color, sound, parts, floats });
+      if (p.game === 'snake' && !battle) battle = createSnakeView({ ctx, input, send, serverNow, getParty: () => party, getMe: () => me, color, sound, parts, floats, dpad: el.dpad });
+      let touchOnly = false;
+      try { touchOnly = !window.matchMedia('(any-pointer: fine)').matches; } catch { /* old browser */ }
+      el.dpad.hidden = !(p.game === 'snake' && touchOnly);
     }
     for (const [i] of Object.entries(p.claimed || {})) hidden.add(Number(i));
     p.players.forEach(pl => color(pl.key));
@@ -167,7 +183,7 @@ export function createPartyApp(root, { api, token, sound, onExit, WebSocketImpl 
       el.sub.textContent = `${n} ${n === 1 ? 'player' : 'players'} in · needs at least 2`;
       el.startnow.hidden = !(inLobby && !startingSoon && n >= 2 && party.players.some(p => p.key === me));
       el.note.textContent = startingSoon ? `${party.startedBy} started the party!` : (inLobby && n < 2 ? 'Waiting for one more player…' : '');
-      const val = pl => (party.game === 'battle' ? `${pl.kos || 0} KO` : fmt(pl.score));
+      const val = pl => (party.game === 'battle' ? `${pl.kos || 0} KO` : party.game === 'snake' ? `${pl.score} pts` : fmt(pl.score));
       el.board.innerHTML = party.players.map(pl => `
         <li class="${pl.key === me ? 'is-me' : ''}" style="--c:${color(pl.key)}"><span class="ta-place">${pl.place}</span><span class="ta-name">${esc(pl.name)}</span><span class="ta-score">${val(pl)}</span></li>`).join('');
     }
@@ -177,11 +193,12 @@ export function createPartyApp(root, { api, token, sound, onExit, WebSocketImpl 
       const mine = party.players.find(p => p.key === me);
       showResults(`
         ${mine ? `<div class="ta-result-label">You finished</div><div class="ta-result-score">${MEDALS[mine.place - 1] || `#${mine.place}`}</div><div class="ta-result-meta">${detail(mine)}</div>` : ''}
-        <ol class="ta-party-final">${party.players.map(p => `<li class="${p.key === me ? 'is-me' : ''}"><span>${MEDALS[p.place - 1] || `${p.place}.`}</span><span class="ta-name">${esc(p.name)}</span><span class="ta-score">${party.game === 'battle' ? `${p.kos || 0} KO` : fmt(p.score)}</span></li>`).join('')}</ol>`);
+        <ol class="ta-party-final">${party.players.map(p => `<li class="${p.key === me ? 'is-me' : ''}"><span>${MEDALS[p.place - 1] || `${p.place}.`}</span><span class="ta-name">${esc(p.name)}</span><span class="ta-score">${party.game === 'battle' ? `${p.kos || 0} KO` : party.game === 'snake' ? `${p.score} pts` : fmt(p.score)}</span></li>`).join('')}</ol>`);
     }
   }
   function detail(pl) {
     if (party.game === 'quiz') return `${fmt(pl.score)} points · ${pl.hits}/${QUESTIONS} right`;
+    if (party.game === 'snake') return `${pl.score} points · ${pl.hits || 0} food · ${pl.kos || 0} ${pl.kos === 1 ? 'KO' : 'KOs'} · crashed ${pl.downs || 0}×`;
     return party.game === 'battle'
       ? `${pl.kos || 0} ${pl.kos === 1 ? 'KO' : 'KOs'} · knocked out ${pl.downs || 0}× · ${pl.hits || 0} hits`
       : `${fmt(pl.score)} points · ${pl.hits} hits${pl.fakes ? ` · ${pl.fakes} fakes` : ''}`;
@@ -236,7 +253,7 @@ export function createPartyApp(root, { api, token, sound, onExit, WebSocketImpl 
     },
     render() {
       if (party?.status !== 'running') return;
-      if (party.game === 'battle') { battle?.render(); return; }
+      if (party.game === 'battle' || party.game === 'snake') { battle?.render(); return; }
       if (party.game === 'quiz') return;
       const t = (serverNow() - party.startAt) / 1000;
       ctx.fillStyle = C.bg; ctx.fillRect(0, 0, W, H);

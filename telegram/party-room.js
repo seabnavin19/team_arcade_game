@@ -3,11 +3,18 @@
 // posts the lobby, a cancel notice, and the results in the group.
 
 import { createParty, join, hit, miss, start, startNow, finish, timelineFor, publicState, isActive, MIN_PLAYERS, PARTY_SECONDS, PARTY_GAMES } from '../src/party/rules.js';
-import { createBattle, addShip, setInput, step as stepBattle, snapshot, battleStats } from '../src/party/battle.js';
+import { createBattle, addShip, setInput, step as stepBattle, snapshot as battleSnapshot, battleStats } from '../src/party/battle.js';
+import { createSnakeGame, addSnake, setDir, step as stepSnake, snapshot as snakeSnapshot, snakeStats, TICK_MS as SNAKE_TICK_MS } from '../src/party/snake.js';
 
 import { buildQuiz, phaseAt, answer as quizAnswer, questionMsg, QUESTIONS } from '../src/party/quiz.js';
 
-const TICK_MS = 50; // Ship Battle runs 20 times a second
+// Real-time party games the room simulates itself, and how.
+const LIVE = {
+  battle: { tickMs: 50, create: createBattle, add: addShip, step: sim => stepBattle(sim, 0.05), snapshot: battleSnapshot, stats: battleStats,
+    input: (sim, key, msg) => { if (msg.type === 'input') setInput(sim, key, Number(msg.mx), Number(msg.my)); } },
+  snake: { tickMs: SNAKE_TICK_MS, create: createSnakeGame, add: addSnake, step: stepSnake, snapshot: snakeSnapshot, stats: snakeStats,
+    input: (sim, key, msg) => { if (msg.type === 'dir') setDir(sim, key, String(msg.d)); } },
+};
 
 const esc = s => String(s ?? '').replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
 const MEDALS = ['🥇', '🥈', '🥉'];
@@ -20,7 +27,7 @@ export class PartyRoom {
     this.http = fetchImpl;
     this.party = undefined; // loaded lazily (the object may have been evicted)
     this.timeline = null;
-    this.battle = null;     // live Ship Battle simulation (in memory only)
+    this.battle = null;     // live Ship Battle / Snake Arena simulation (in memory only)
     this.ticker = null;
     this.quiz = null;       // Brain Race questions (with answers: never sent early)
     this.quizTicker = null;
@@ -87,7 +94,8 @@ export class PartyRoom {
       server.serializeAttachment({ key: user.key, name: user.name });
       const joined = join(this.party, user, this.now());
       if (joined.ok) await this.save();
-      if (joined.ok && this.party.game === 'battle' && this.party.status === 'running') this.ensureBattle() && addShip(this.battle, user.key, user.name);
+      const live = LIVE[this.party.game];
+      if (joined.ok && live && this.party.status === 'running' && this.ensureBattle()) live.add(this.battle, user.key, user.name);
       server.send(JSON.stringify({ ...this.stateMsg(), you: user.key, joinError: joined.ok ? null : joined.reason }));
       if (joined.ok) this.broadcast(this.stateMsg());
       if (this.party.game === 'quiz' && this.party.status === 'running' && this.ensureQuiz()) {
@@ -108,8 +116,8 @@ export class PartyRoom {
     const p = this.party;
     if (msg.type === 'ping') { ws.send(JSON.stringify({ type: 'pong', c: msg.c, s: this.now() })); return; }
     if (!p) return;
-    if (msg.type === 'input') {
-      if (p.game === 'battle' && p.status === 'running' && this.ensureBattle()) setInput(this.battle, me.key, Number(msg.mx), Number(msg.my));
+    if (msg.type === 'input' || msg.type === 'dir') {
+      if (LIVE[p.game] && p.status === 'running' && this.ensureBattle()) LIVE[p.game].input(this.battle, me.key, msg);
       return;
     }
     if (msg.type === 'answer') {
@@ -148,30 +156,35 @@ export class PartyRoom {
   async webSocketClose(ws, code) { try { ws.close(code, 'bye'); } catch { /* already closed */ } }
   async webSocketError() { /* the client will reconnect */ }
 
-  // ---------- Ship Battle loop ----------
+  // ---------- real-time loop (Ship Battle, Snake Arena) ----------
   ensureBattle() {
     if (this.battle) return true;
     const p = this.party;
-    if (!p || p.game !== 'battle' || p.status !== 'running') return false;
+    const live = p && LIVE[p.game];
+    if (!live || p.status !== 'running') return false;
     // (Re)build the arena; after a restart everyone respawns but keeps their score.
-    this.battle = createBattle(p.seed);
+    this.battle = live.create(p.seed);
     for (const [key, pl] of Object.entries(p.players)) {
-      const ship = addShip(this.battle, key, pl.name);
-      if (ship) Object.assign(ship, { kos: pl.kos || 0, downs: pl.downs || 0, hits: pl.hits || 0 });
+      const unit = live.add(this.battle, key, pl.name);
+      if (unit) Object.assign(unit, { score: pl.score || 0, kos: pl.kos || 0, downs: pl.downs || 0, hits: pl.hits || 0, ...(p.game === 'snake' ? { food: pl.hits || 0 } : {}) });
     }
     let n = 0;
+    const every2s = Math.round(2000 / live.tickMs);
     this.ticker = setInterval(() => {
       if (!this.battle) return;
-      stepBattle(this.battle, TICK_MS / 1000);
-      this.broadcast({ type: 'snap', t: this.now(), ...snapshot(this.battle) });
-      if (++n % 40 === 0) { this.copyBattleStats(); this.save(); } // keep scores safe every 2 s
-    }, TICK_MS);
+      live.step(this.battle);
+      this.broadcast({ type: 'snap', t: this.now(), ...live.snapshot(this.battle) });
+      if (++n % every2s === 0) { this.copyBattleStats(); this.save(); } // keep scores safe
+    }, live.tickMs);
     return true;
   }
 
+  liveSnap() { const live = LIVE[this.party?.game]; return live && this.battle ? { type: 'snap', t: this.now(), ...live.snapshot(this.battle) } : null; }
+
   copyBattleStats() {
-    if (!this.battle || !this.party) return;
-    for (const [key, st] of Object.entries(battleStats(this.battle))) {
+    const live = LIVE[this.party?.game];
+    if (!this.battle || !live) return;
+    for (const [key, st] of Object.entries(live.stats(this.battle))) {
       const pl = this.party.players[key];
       if (pl) Object.assign(pl, { score: st.score, kos: st.kos, downs: st.downs, hits: st.hits });
     }
@@ -228,9 +241,9 @@ export class PartyRoom {
       await this.save();
       this.broadcast(this.stateMsg());
       if (status === 'running') {
-        if (p.game === 'battle') { this.ensureBattle(); this.broadcast({ type: 'snap', t: this.now(), ...snapshot(this.battle) }); }
+        if (LIVE[p.game]) { this.ensureBattle(); this.broadcast(this.liveSnap()); }
         if (p.game === 'quiz') { this.quizSent = { q: -1, r: -1 }; this.ensureQuiz(); this.quizTick(); }
-        await this.ctx.storage.setAlarm(p.game === 'battle' ? p.endAt : p.endAt + 1500); // taps get a little grace
+        await this.ctx.storage.setAlarm(LIVE[p.game] ? p.endAt : p.endAt + 1500); // taps get a little grace
       } else {
         const names = Object.values(p.players).map(x => x.name);
         await this.tg('sendMessage', {
@@ -239,7 +252,7 @@ export class PartyRoom {
         });
       }
     } else if (p.status === 'running') {
-      if (p.game === 'battle') { this.copyBattleStats(); this.stopBattle(); }
+      if (LIVE[p.game]) { this.copyBattleStats(); this.stopBattle(); }
       if (p.game === 'quiz') { this.ensureQuiz(); this.quizTick(); this.stopQuiz(); }
       const res = finish(p);
       await this.save();
@@ -247,6 +260,8 @@ export class PartyRoom {
       const g = PARTY_GAMES[p.game || 'reaction'];
       const detail = r => (p.game === 'battle'
         ? `${r.kos} ${r.kos === 1 ? 'KO' : 'KOs'} · knocked out ${r.downs}×`
+        : p.game === 'snake'
+        ? `${r.score} pts · ${r.hits} food · ${r.kos} ${r.kos === 1 ? 'KO' : 'KOs'}`
         : p.game === 'quiz'
         ? `${r.score.toLocaleString('en-US')} (${r.hits}/${QUESTIONS} right)`
         : `${r.score.toLocaleString('en-US')} (${r.hits} hits${r.fakes ? `, ${r.fakes} fakes` : ''})`);

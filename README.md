@@ -42,7 +42,7 @@ Telegram group ──/arcade, Play──▶ Cloudflare Worker (telegram/worker.j
 
 ### 🎉 Live party (multiplayer)
 
-Send **`/party`** in the group and pick a game from the buttons, or go straight to one with **`/party battle`**, **`/party iq`** or **`/party reaction`**.
+Send **`/party`** in the group and pick a game from the buttons, or go straight to one with **`/party battle`**, **`/party snake`**, **`/party iq`** or **`/party reaction`**.
 The bot posts a card with a **Join the party** button and a 60-second countdown. A party needs at least 2 players, and one party runs per group at a time.
 As soon as 2 players are in, anyone in the lobby can tap **▶ Start now**. Everyone then gets a 3-second countdown instead of waiting out the full minute.
 
@@ -52,6 +52,13 @@ As soon as 2 players are in, anyone in the lobby can tap **▶ Start now**. Ever
 - Pickups appear every 12 seconds: **+** refills your shields, **R** gives 6 seconds of rapid fire.
 - **Most KOs wins.** Ties go to whoever was knocked out fewer times.
 - Controls: mouse (the ship flies toward the cursor), arrow keys / WASD, or drag anywhere on a phone.
+
+**🐍 Snake Arena** (90 seconds, 2–8 players)
+- Everyone's snake moves in one grid arena, 8 steps a second.
+- Eat food to grow: **+1**, and golden food gives **+3**. If another snake crashes into **your** body, you get **+5**.
+- Hitting a wall, yourself or another snake knocks you out. Your body turns into food for everyone else, and you respawn small 2 seconds later.
+  If two heads meet, both are out and nobody scores. **Most points wins.**
+- Controls: arrow keys / WASD; on a phone, swipe on the board or use the on-screen arrows.
 
 **💡 Brain Race** (8 puzzles, about 1¾ minutes, any number)
 - IQ-style puzzles: number patterns, quick maths, missing numbers, "which is largest" (fractions, decimals, %), time puzzles and odd-one-out.
@@ -69,7 +76,7 @@ A live scoreboard runs under the game. At the end, the bot posts the results and
 Party scores are just for fun. They don't count toward the weekly leaderboards.
 
 Each group's party runs in its own live room on Cloudflare (a Durable Object, included in the free plan).
-The room is the referee. In Ship Battle it runs the arena 20 times a second and decides every hit. In Reaction Tap it checks every tap against its own clock.
+The room is the referee. In Ship Battle it runs the arena 20 times a second and decides every hit, and in Snake Arena it moves every snake and decides every crash. In Reaction Tap it checks every tap against its own clock.
 
 > **Privacy:** this repository is public, so the `scores` branch can be read by anyone. It shows players' first names, last initials and scores.
 > To keep it private, make the repository private. GitHub Pages on a private repository needs a paid GitHub plan.
@@ -124,6 +131,7 @@ If the last step says it was skipped, open this address once in a browser:
 | Party lobby length, minimum players, game lengths | `src/party/rules.js` |
 | Brain Race: number of puzzles, time per puzzle, puzzle types | top of `src/party/quiz.js` |
 | Ship Battle balance (speed, fire rate, shields, pickups) | top of `src/party/battle.js` |
+| Snake Arena (speed, board size, points, respawn) | top of `src/party/snake.js` |
 | Time of the Monday results post | `crons` in `telegram/wrangler.toml` (UTC) |
 | Game rules or balance | `src/games/…`. Drone Shooter's rules are in `shooter-engine.js` |
 | Server-side score limits | `src/games/meta.js` |
@@ -152,7 +160,7 @@ To update the games, upload a new `arcade.js` with the same name. Players get it
 
 ```bash
 npm install
-npm test                       # 98 automated tests: game rules, saving and conflicts, ranking, the Telegram server, live parties
+npm test                       # 108 automated tests: game rules, saving and conflicts, ranking, the Telegram server, live parties
 npm run build                  # dist/ (Confluence) and site/ (Telegram / GitHub Pages)
 
 node dev/local-telegram.mjs    # Telegram version with a pretend Telegram + GitHub → http://localhost:8787/play?name=Dara

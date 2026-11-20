@@ -16,6 +16,8 @@ export const PARTY_GAMES = {
     pitch: 'Everyone gets the same targets at the same moment. The fastest tap takes the points. Red ones are traps!' },
   quiz: { title: 'Brain Race', emoji: '💡', seconds: QUIZ_SECONDS, maxPlayers: 50,
     pitch: '8 quick IQ puzzles: number patterns, maths, time and logic. Everyone gets the same puzzle at the same moment. Right answers score more the faster you are, plus a bonus for the first correct answer. One try per puzzle!' },
+  snake: { title: 'Snake Arena', emoji: '🐍', seconds: 90, maxPlayers: 8,
+    pitch: "Everyone's snake in one arena. Eat food to grow (+1, golden +3). If another snake crashes into you, you get +5. Hit a wall or a snake and you respawn small. Most points wins." },
   battle: { title: 'Ship Battle', emoji: '🚀', seconds: 90, maxPlayers: 8,
     pitch: 'Everyone flies a ship in one arena. Your ship fires forward on its own, so steer to aim. 3 hits knock a ship out, and the most KOs wins.' },
 };
