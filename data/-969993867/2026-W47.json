@@ -1,0 +1,41 @@
+{
+ "chat": -969993867,
+ "week": "2026-W47",
+ "games": {
+  "shooter": {
+   "game": "shooter",
+   "week": "2026-W47",
+   "entries": {}
+  },
+  "reaction": {
+   "game": "reaction",
+   "week": "2026-W47",
+   "entries": {}
+  },
+  "memory": {
+   "game": "memory",
+   "week": "2026-W47",
+   "entries": {
+    "tg-791814767": {
+     "name": "Huot Rithy - ហ.",
+     "score": 49.6,
+     "at": "2026-11-20T03:34:45.453Z",
+     "meta": {
+      "moves": 19,
+      "seconds": 27.6
+     }
+    }
+   }
+  },
+  "brain": {
+   "game": "brain",
+   "week": "2026-W47",
+   "entries": {}
+  },
+  "typing": {
+   "game": "typing",
+   "week": "2026-W47",
+   "entries": {}
+  }
+ }
+}
