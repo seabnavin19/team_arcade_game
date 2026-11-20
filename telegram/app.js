@@ -14,7 +14,7 @@ import { weekKey, previousWeekKey, weekLabel } from '../src/core/time.js';
 import { mergeEntry, emptyBoard } from '../src/core/store.js';
 import { rankBoard, championBoard } from '../src/core/ranking.js';
 import { GAME_META, GAME_IDS, checkRun } from '../src/games/meta.js';
-import { JOIN_SECONDS, MIN_PLAYERS, PARTY_GAMES } from '../src/party/rules.js';
+import { JOIN_SECONDS, MIN_PLAYERS, PARTY_GAMES, DUO_GAMES } from '../src/party/rules.js';
 
 const SESSION_HOURS = 12;
 const RUN_MINUTES = 45;
@@ -95,20 +95,25 @@ export function createHandler({ fetch: fetchImpl = (...a) => fetch(...a), now = 
     return { env, keys, gh, tg };
   }
 
-  const room = (env, chatId) => env.PARTY.get(env.PARTY.idFromName(String(chatId)));
-  const roomCall = async (env, chatId, path, body) => {
-    const res = await room(env, chatId).fetch(`https://party${path}`, body ? { method: 'POST', body: JSON.stringify(body) } : undefined);
+  // Each group has one party room and, separately, one Duo Mode room, so a duo
+  // can play while a group party is on.
+  const room = (env, chatId, duo = false) => env.PARTY.get(env.PARTY.idFromName(duo ? `${chatId}:duo` : String(chatId)));
+  const roomCall = async (env, chatId, path, body, duo = false) => {
+    const res = await room(env, chatId, duo).fetch(`https://party${path}`, body ? { method: 'POST', body: JSON.stringify(body) } : undefined);
     return res.json();
   };
 
   /** Open a party lobby in a group. Returns false if one is already running. */
   async function startParty(c, chat, game, threadId, { pickedBy, pickerMessageId } = {}) {
     const g = PARTY_GAMES[game];
+    const duo = !!g.duo;
     const thread = threadId ? { message_thread_id: threadId } : {};
-    const made = await roomCall(c.env, chat.id, '/create', { chat: chat.id, game, joinSeconds: Number(c.env.PARTY_JOIN_SECONDS) || undefined });
+    const made = await roomCall(c.env, chat.id, '/create', { chat: chat.id, game, joinSeconds: Number(c.env.PARTY_JOIN_SECONDS) || undefined }, duo);
     if (!made.created) {
       const cur = PARTY_GAMES[made.party?.game] || g;
-      await c.tg('sendMessage', { chat_id: chat.id, parse_mode: 'HTML', text: `${cur.emoji} A <b>${cur.title}</b> party is already on. Tap <b>Join the party</b> on its card.`, ...thread });
+      await c.tg('sendMessage', { chat_id: chat.id, parse_mode: 'HTML', text: duo
+        ? `${cur.emoji} A <b>${cur.title}</b> duo is already on in this group. Try again when it ends (about ${Math.ceil(cur.seconds / 60) + 1} minutes).`
+        : `${cur.emoji} A <b>${cur.title}</b> party is already on. Tap <b>Join the party</b> on its card.`, ...thread });
       return false;
     }
     if (pickerMessageId) {
@@ -116,10 +121,17 @@ export function createHandler({ fetch: fetchImpl = (...a) => fetch(...a), now = 
     }
     const card = await c.tg('sendGame', {
       chat_id: chat.id, game_short_name: c.env.GAME_SHORT_NAME, ...thread,
-      reply_markup: { inline_keyboard: [[{ text: `${g.emoji} Join the party`, callback_game: {} }]] },
+      reply_markup: { inline_keyboard: [[{ text: duo ? `${g.emoji} Join the duo` : `${g.emoji} Join the party`, callback_game: {} }]] },
     });
-    if (card.ok) await roomCall(c.env, chat.id, '/set-message', { messageId: card.result.message_id });
+    if (card.ok) await roomCall(c.env, chat.id, '/set-message', { messageId: card.result.message_id }, duo);
     const secs = Math.round((made.party.startAt - now()) / 1000);
+    if (duo) {
+      await c.tg('sendMessage', {
+        chat_id: chat.id, parse_mode: 'HTML', ...thread,
+        text: [`${g.emoji} <b>${g.title}</b> · Duo Mode${pickedBy ? `, started by <b>${esc(pickedBy)}</b>` : ''}`, g.pitch, `The first 2 people to tap <b>Join the duo</b> on the card above play together as one team. Starts in ${secs} seconds, or once you're both in, either of you can tap <b>Start now</b>.`].join('\n'),
+      });
+      return true;
+    }
     await c.tg('sendMessage', {
       chat_id: chat.id, parse_mode: 'HTML', ...thread,
       text: [`${g.emoji} <b>${g.title} Party!</b> Starts in ${secs} seconds and lasts ${g.seconds} seconds.`, `Tap <b>Join the party</b> on the card above. ${g.pitch}`, `Needs at least ${MIN_PLAYERS} players${g.maxPlayers < 50 ? `, up to ${g.maxPlayers}` : ''}. Once ${MIN_PLAYERS} are in, anyone in the lobby can tap <b>Start now</b>.`].join('\n'),
@@ -156,15 +168,18 @@ export function createHandler({ fetch: fetchImpl = (...a) => fetch(...a), now = 
         const game = cq.data.slice(6);
         if (!PARTY_GAMES[game] || !c.env.PARTY) return c.tg('answerCallbackQuery', { callback_query_id: cq.id });
         const started = await startParty(c, cq.message.chat, game, cq.message.message_thread_id, { pickedBy: displayName(cq.from), pickerMessageId: cq.message.message_id });
-        return c.tg('answerCallbackQuery', { callback_query_id: cq.id, text: started ? `${PARTY_GAMES[game].title} party on!` : 'A party is already on' });
+        const duo = PARTY_GAMES[game].duo;
+        return c.tg('answerCallbackQuery', { callback_query_id: cq.id, text: started ? `${PARTY_GAMES[game].title}${duo ? '' : ' party'} on!` : duo ? 'A duo is already on' : 'A party is already on' });
       }
       if (!cq.game_short_name) return c.tg('answerCallbackQuery', { callback_query_id: cq.id });
       const chat = cq.message?.chat;
       const claims = { typ: 's', u: cq.from.id, n: displayName(cq.from), c: chat ? chat.id : 'inline', iat: now(), exp: now() + SESSION_HOURS * 3600e3 };
       // Tapped "Join the party" on a live party card?
       if (chat && c.env.PARTY) {
-        const { party } = await roomCall(c.env, chat.id, `/lookup?messageId=${cq.message.message_id}`).catch(() => ({}));
-        if (party) claims.p = party.id;
+        for (const duo of [false, true]) {
+          const { party } = await roomCall(c.env, chat.id, `/lookup?messageId=${cq.message.message_id}`, undefined, duo).catch(() => ({}));
+          if (party) { claims.p = party.id; if (duo) claims.r = 'duo'; break; }
+        }
       }
       const t = await sign(c.keys.tokenKey, claims);
       // v= changes every minute so the phone fetches a fresh page (which loads the newest game) instead of a cached one
@@ -196,7 +211,24 @@ export function createHandler({ fetch: fetchImpl = (...a) => fetch(...a), now = 
         const ALIASES = { iq: 'quiz', brain: 'quiz', ship: 'battle', ships: 'battle', tap: 'reaction', snakes: 'snake', guess: 'draw', drawing: 'draw' };
         const pick = ALIASES[arg] || Object.keys(PARTY_GAMES).find(g => g === arg || (arg && PARTY_GAMES[g].title.toLowerCase().startsWith(arg)));
         if (pick) return startParty(c, msg.chat, pick, msg.message_thread_id);
-        return reply('🎉 <b>Pick a party game:</b>', { reply_markup: { inline_keyboard: Object.entries(PARTY_GAMES).map(([id, g]) => [{ text: `${g.emoji} ${g.title}`, callback_data: `party:${id}` }]) } });
+        return reply('🎉 <b>Pick a party game:</b>', { reply_markup: { inline_keyboard: Object.entries(PARTY_GAMES).filter(([, g]) => !g.duo).map(([id, g]) => [{ text: `${g.emoji} ${g.title}`, callback_data: `party:${id}` }]) } });
+      }
+      case 'duo': {
+        if (msg.chat.type === 'private') return reply('Duo Mode runs in groups: add me to your team group and send /duo there.');
+        if (!c.env.PARTY) return reply('Live games are not switched on for this server yet.');
+        const arg = (msg.text.split(/\s+/)[1] || '').toLowerCase();
+        if (arg === 'board' || arg === 'top') {
+          const { week, boards } = await roomCall(c.env, msg.chat.id, '/duo-board', undefined, true);
+          const lines = DUO_GAMES.flatMap(id => {
+            const g = PARTY_GAMES[id], list = boards?.[id] || [];
+            return [`${g.emoji} <b>${g.title}</b>`, ...(list.length ? list.slice(0, 3).map((e, i) => `${['🥇', '🥈', '🥉'][i]} ${esc(e.names.join(' ♥ '))} · ${id === 'market' ? '$' : ''}${e.score.toLocaleString('en-US')}${id === 'sync' ? ' pts' : ''}`) : ['<i>No duos yet this week.</i>']), ''];
+          });
+          return reply([`💞 <b>Top duos</b> · ${esc(weekLabel(week))}`, '', ...lines, 'Send /duo to play.'].join('\n'));
+        }
+        const DUO_ALIASES = { sync: 'sync', insync: 'sync', quiz: 'sync', market: 'market', night: 'market', cook: 'market', noodle: 'market', noodles: 'market' };
+        const pick = DUO_ALIASES[arg];
+        if (pick) return startParty(c, msg.chat, pick, msg.message_thread_id, { pickedBy: displayName(msg.from) });
+        return reply('💞 <b>Duo Mode</b>: games for two, one shared score. Pick one:', { reply_markup: { inline_keyboard: DUO_GAMES.map(id => [{ text: `${PARTY_GAMES[id].emoji} ${PARTY_GAMES[id].title}`, callback_data: `party:${id}` }]) } });
       }
       case 'board':
       case 'champion':
@@ -216,6 +248,7 @@ export function createHandler({ fetch: fetchImpl = (...a) => fetch(...a), now = 
           '',
           '/arcade: post the game, then tap <b>Play</b>',
           '/party: live multiplayer round: ⚡ Reaction Tap, 💡 Brain Race, 🎨 Draw & Guess, 🐍 Snake Arena or 🚀 Ship Battle',
+          '/duo: Duo Mode for two players on one team: 💞 In Sync or 🍜 Night Market Duo (/duo board shows the week\'s top duos)',
           '/board: this week\'s leaderboards and champion',
           '/lastweek: last week\'s results',
           '',
@@ -299,6 +332,7 @@ export function createHandler({ fetch: fetchImpl = (...a) => fetch(...a), now = 
     const cmds = await c.tg('setMyCommands', { commands: [
       { command: 'arcade', description: 'Post Team Arcade, then tap Play' },
       { command: 'party', description: 'Live party: Reaction, Brain Race, Draw & Guess, Snake, Ships' },
+      { command: 'duo', description: 'Duo Mode for two: In Sync, Night Market Duo' },
       { command: 'board', description: "This week's leaderboards" },
       { command: 'lastweek', description: "Last week's results" },
       { command: 'help', description: 'How it works' },
@@ -338,11 +372,11 @@ export function createHandler({ fetch: fetchImpl = (...a) => fetch(...a), now = 
         if (url.pathname === '/party/ws' || url.pathname === '/party/state') {
           const s = await session(c, url.searchParams.get('t'));
           if (!s || !env.PARTY || typeof s.c !== 'number') return json({ reason: 'expired' }, 401);
-          if (url.pathname === '/party/state') return json(await roomCall(env, s.c, '/state'));
+          if (url.pathname === '/party/state') return json(await roomCall(env, s.c, '/state', undefined, s.r === 'duo'));
           if (!s.p) return json({ reason: 'not a party link' }, 400);
           const fwd = new Request('https://party/ws', request);
           fwd.headers.set('X-Arcade-User', JSON.stringify({ key: `tg-${s.u}`, name: s.n, partyId: s.p }));
-          return room(env, s.c).fetch(fwd);
+          return room(env, s.c, s.r === 'duo').fetch(fwd);
         }
         if (url.pathname === '/setup') {
           if (url.searchParams.get('key') !== env.ARCADE_SECRET) return new Response('forbidden', { status: 403 });
