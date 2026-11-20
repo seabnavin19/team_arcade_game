@@ -6,6 +6,9 @@ import { createQuizView } from './quiz-view.js';
 import { createSnakeView } from './snake-view.js';
 import { createDrawView } from './draw-view.js';
 import { QUESTIONS } from './quiz.js';
+import { createSyncView } from './sync-view.js';
+import { createMarketView } from './market-view.js';
+import { ROUNDS as SYNC_ROUNDS } from './sync.js';
 import { radiusAt, W, H, DURATION } from '../games/reaction.js';
 import { createLoop } from '../core/loop.js';
 import { createInput } from '../core/input.js';
@@ -22,7 +25,7 @@ export function createPartyApp(root, { api, token, sound, onExit, WebSocketImpl 
     <div class="ta ta-party" data-ta>
       <header class="ta-top">
         <div class="ta-brand"><span class="ta-brand-a">TEAM</span><span class="ta-brand-b">ARCADE</span></div>
-        <div class="ta-week">⚡ Live party</div>
+        <div class="ta-week" data-mode>⚡ Live party</div>
         <button class="ta-iconbtn" data-sound type="button"></button>
       </header>
       <section class="ta-party-lobby" data-lobby>
@@ -39,6 +42,7 @@ export function createPartyApp(root, { api, token, sound, onExit, WebSocketImpl 
         <div class="ta-draw-top" data-drawtop hidden></div>
         <div class="ta-canvas-wrap" data-canvaswrap><canvas data-canvas tabindex="0"></canvas><div class="ta-overlay" data-overlay></div></div>
         <div class="ta-quiz" data-quiz hidden></div>
+        <div class="ta-quiz ta-duo" data-duo hidden></div>
         <div class="ta-draw-ui" data-drawui hidden></div>
         <div class="ta-dpad" data-dpad hidden>
           <button type="button" data-d="up" aria-label="Up">▲</button>
@@ -52,7 +56,7 @@ export function createPartyApp(root, { api, token, sound, onExit, WebSocketImpl 
       <section class="ta-party-results" data-results hidden></section>
     </div>`;
   const $ = s => root.querySelector(`[data-${s}]`);
-  const el = { drawtop: $('drawtop'), drawui: $('drawui'), dpad: $('dpad'), canvaswrap: $('canvaswrap'), quiz: $('quiz'), startnow: $('startnow'), note: $('note'), title: $('title'), rules: $('rules'), controls: $('controls'), lobby: $('lobby'), count: $('count'), sub: $('sub'), players: $('players'), game: $('game'), canvas: $('canvas'), overlay: $('overlay'), board: $('board'), results: $('results'), sound: $('sound') };
+  const el = { mode: $('mode'), duo: $('duo'), drawtop: $('drawtop'), drawui: $('drawui'), dpad: $('dpad'), canvaswrap: $('canvaswrap'), quiz: $('quiz'), startnow: $('startnow'), note: $('note'), title: $('title'), rules: $('rules'), controls: $('controls'), lobby: $('lobby'), count: $('count'), sub: $('sub'), players: $('players'), game: $('game'), canvas: $('canvas'), overlay: $('overlay'), board: $('board'), results: $('results'), sound: $('sound') };
 
   const renderSound = () => { el.sound.innerHTML = sound.on ? ICONS.sound : ICONS.muted; el.sound.title = sound.on ? 'Sound on' : 'Sound off'; };
   el.sound.addEventListener('click', () => { sound.toggle(); renderSound(); });
@@ -111,6 +115,10 @@ export function createPartyApp(root, { api, token, sound, onExit, WebSocketImpl 
     } else if (['round', 'strokes', 'chat', 'guessed', 'you-guessed', 'close-guess', 'reveal'].includes(m.type) && drawView) {
       if (m.party) setParty(m.party);
       drawView.onMessage(m);
+    } else if (m.type === 'sync-round') { syncView?.onRound(m);
+    } else if (m.type === 'sync-locked') { syncView?.onLocked(m);
+    } else if (m.type === 'sync-partner') { syncView?.onPartner(m);
+    } else if (m.type === 'sync-reveal') { setParty(m.party); syncView?.onReveal(m);
     } else if (m.type === 'question') { quizView?.onQuestion(m);
     } else if (m.type === 'locked') { quizView?.onLocked(m);
     } else if (m.type === 'answered') { quizView?.onAnswered(m);
@@ -118,6 +126,7 @@ export function createPartyApp(root, { api, token, sound, onExit, WebSocketImpl 
     } else if (m.type === 'notice') {
       el.note.textContent = m.text; el.startnow.disabled = false;
     } else if (m.type === 'snap') {
+      if (marketView) { marketView.onSnap(m); if (party) party.players.forEach(pl => { pl.score = m.tips; }); if (performance.now() - lastBoard > 400) { lastBoard = performance.now(); render(); } return; }
       battle?.onSnap(m);
       liveBattleScores(m);
     } else if (m.type === 'taken') {
@@ -162,16 +171,22 @@ export function createPartyApp(root, { api, token, sound, onExit, WebSocketImpl 
     if (first) {
       timeline = timelineFor(p); hidden.clear();
       const g = PARTY_GAMES[p.game] || PARTY_GAMES.reaction;
-      el.title.textContent = `${g.emoji} ${g.title} Party`;
+      el.title.textContent = g.duo ? `${g.emoji} ${g.title}` : `${g.emoji} ${g.title} Party`;
+      el.mode.textContent = g.duo ? '💞 Duo Mode' : '⚡ Live party';
       el.rules.textContent = g.pitch;
       el.controls.textContent = p.game === 'battle'
         ? 'Controls: move with the mouse, arrow keys or WASD. On a phone, drag anywhere to steer.'
         : p.game === 'quiz' ? 'Controls: tap an answer, or press 1–4. You get one try per puzzle.'
         : p.game === 'snake' ? 'Controls: arrow keys or WASD. On a phone, swipe on the board or use the arrow buttons.'
         : p.game === 'draw' ? 'When it’s your turn, draw with your mouse or finger. Otherwise type your guesses. 3 rounds, and players take turns drawing.'
+        : p.game === 'sync' ? 'Controls: tap an answer, or press 1–4. Your partner can’t see your pick until the reveal.'
+        : p.game === 'market' ? 'Cook: tap a dish (or press 1–3) to start it, then tap it when it’s ready. Server: tap a customer to hand them their dish.'
         : 'Controls: click or tap the targets.';
-      el.canvaswrap.hidden = p.game === 'quiz';
+      el.canvaswrap.hidden = p.game === 'quiz' || !!g.duo;
       el.quiz.hidden = p.game !== 'quiz';
+      el.duo.hidden = !g.duo;
+      if (p.game === 'sync' && !syncView) syncView = createSyncView(el.duo, { send, serverNow, getMe: () => me, getParty: () => party, sound, input });
+      if (p.game === 'market' && !marketView) marketView = createMarketView(el.duo, { send, serverNow, getMe: () => me, getParty: () => party, sound });
       if (p.game === 'quiz' && !quizView) quizView = createQuizView(el.quiz, { send, serverNow, getMe: () => me, sound, input });
       if (p.game === 'battle' && !battle) battle = createBattleView({ ctx, input, send, serverNow, getParty: () => party, getMe: () => me, color, sound, parts, floats });
       el.drawtop.hidden = el.drawui.hidden = p.game !== 'draw';
@@ -199,16 +214,33 @@ export function createPartyApp(root, { api, token, sound, onExit, WebSocketImpl 
       const n = party.players.length;
       const inLobby = party.status === 'lobby';
       const startingSoon = inLobby && party.startedBy;
-      el.sub.textContent = `${n} ${n === 1 ? 'player' : 'players'} in · needs at least 2`;
+      el.sub.textContent = party.duo ? `${n} of 2 players in · one team, one score` : `${n} ${n === 1 ? 'player' : 'players'} in · needs at least 2`;
       el.startnow.hidden = !(inLobby && !startingSoon && n >= 2 && party.players.some(p => p.key === me));
-      el.note.textContent = startingSoon ? `${party.startedBy} started the party!` : (inLobby && n < 2 ? 'Waiting for one more player…' : '');
+      el.note.textContent = startingSoon ? `${party.startedBy} started the ${party.duo ? 'game' : 'party'}!` : (inLobby && n < 2 ? (party.duo ? 'Waiting for your partner to tap Join the duo…' : 'Waiting for one more player…') : '');
+      if (party.duo) {
+        const team = party.players.map(pl => esc(pl.key === me ? 'You' : pl.name)).join(' ♥ ');
+        const sc = party.players[0]?.score || 0;
+        el.board.innerHTML = `<li class="is-me ta-duo-team" style="--c:var(--magenta)"><span class="ta-name">${team}</span><span class="ta-score">${party.game === 'market' ? `$${fmt(sc)}` : fmt(sc)}</span></li>`;
+      } else {
       const val = pl => (party.game === 'battle' ? `${pl.kos || 0} KO` : party.game === 'snake' ? `${pl.score} pts` : fmt(pl.score));
       el.board.innerHTML = party.players.map(pl => `
         <li class="${pl.key === me ? 'is-me' : ''}" style="--c:${color(pl.key)}"><span class="ta-place">${pl.place}</span><span class="ta-name">${esc(pl.name)}</span><span class="ta-score">${val(pl)}</span></li>`).join('');
+      }
     }
     if (status === 'error') showResults(`<p class="ta-warn">${esc(fatal)}</p>`);
-    if (status === 'cancelled') showResults('<p>Not enough players joined, so the party was cancelled.<br>Send <b>/party</b> in the group to try again.</p>');
-    if (status === 'done') {
+    if (status === 'cancelled') showResults(party.duo
+      ? '<p>Your partner didn’t join in time, so the game was cancelled.<br>Send <b>/duo</b> in the group to try again.</p>'
+      : '<p>Not enough players joined, so the party was cancelled.<br>Send <b>/party</b> in the group to try again.</p>');
+    if (status === 'done' && party.duo) {
+      const names = party.players.map(p => esc(p.key === me ? 'You' : p.name)).join(' ♥ ');
+      const sc = party.players[0]?.score || 0, s = party.summary || {};
+      const big = party.game === 'sync' ? `${s.percent || 0}%` : `$${fmt(sc)}`;
+      const label = party.game === 'sync' ? 'In sync' : 'Tips earned together';
+      const meta = party.game === 'sync'
+        ? `${s.matches || 0} of ${SYNC_ROUNDS} matched · ${fmt(sc)} points${s.best >= 3 ? ` · best streak ${s.best}` : ''}`
+        : `${s.served || 0} served · ${s.walked || 0} walked out · ${s.burned || 0} burned`;
+      showResults(`<div class="ta-result-label">${label}</div><div class="ta-result-score">${big}</div><div class="ta-result-meta">${names}</div><p class="ta-result-status">${meta}</p><p class="ta-muted">The week’s top duos are in the group. Send <b>/duo board</b> to see them.</p>`);
+    } else if (status === 'done') {
       const mine = party.players.find(p => p.key === me);
       showResults(`
         ${mine ? `<div class="ta-result-label">You finished</div><div class="ta-result-score">${MEDALS[mine.place - 1] || `#${mine.place}`}</div><div class="ta-result-meta">${detail(mine)}</div>` : ''}
@@ -238,6 +270,8 @@ export function createPartyApp(root, { api, token, sound, onExit, WebSocketImpl 
   let battle = null;
   let quizView = null;
   let drawView = null;
+  let syncView = null;
+  let marketView = null;
   input.on('pointerdown', pt => {
     if (party?.status !== 'running' || party.game !== 'reaction') return;
     const t = (serverNow() - party.startAt) / 1000;
@@ -267,6 +301,8 @@ export function createPartyApp(root, { api, token, sound, onExit, WebSocketImpl 
       if (battle && party?.status === 'running') battle.update(dt);
       if (quizView && party?.status === 'running') quizView.update();
       if (drawView && party?.status === 'running') drawView.update();
+      if (syncView && party?.status === 'running') syncView.update();
+      if (marketView && party?.status === 'running') marketView.update();
       if (party?.status === 'lobby') {
         const left = Math.max(0, Math.ceil((party.startAt - serverNow()) / 1000));
         el.count.textContent = left > 0 ? `${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}` : 'GO!';
@@ -276,7 +312,7 @@ export function createPartyApp(root, { api, token, sound, onExit, WebSocketImpl 
     render() {
       if (party?.status !== 'running') return;
       if (party.game === 'battle' || party.game === 'snake') { battle?.render(); return; }
-      if (party.game === 'quiz') return;
+      if (party.game === 'quiz' || party.duo) return;
       if (party.game === 'draw') { drawView?.render(); return; }
       const t = (serverNow() - party.startAt) / 1000;
       ctx.fillStyle = C.bg; ctx.fillRect(0, 0, W, H);

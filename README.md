@@ -38,7 +38,7 @@ Telegram group ──/arcade, Play──▶ Cloudflare Worker (telegram/worker.j
 - **The Worker** is the only part holding the bot token and the GitHub token. It checks each run (who played, how long it took, whether the score is possible) before saving.
 - **Group messages:** the bot posts when someone takes #1 or enters the top 3 of a game, and every Monday at 08:30 it posts last week's results.
 
-**Bot commands:** `/arcade` posts the game with a Play button, `/party` starts a live party round (below), `/board` shows this week's leaderboards, `/lastweek` shows last week's results, and `/help` explains the bot.
+**Bot commands:** `/arcade` posts the game with a Play button, `/party` starts a live party round (below), `/duo` starts a game for two (Duo Mode, below), `/board` shows this week's leaderboards, `/lastweek` shows last week's results, and `/help` explains the bot.
 
 ### 🎉 Live party (multiplayer)
 
@@ -86,6 +86,30 @@ Party scores are just for fun. They don't count toward the weekly leaderboards.
 
 Each group's party runs in its own live room on Cloudflare (a Durable Object, included in the free plan).
 The room is the referee. In Ship Battle it runs the arena 20 times a second and decides every hit, and in Snake Arena it moves every snake and decides every crash. In Reaction Tap it checks every tap against its own clock.
+
+### 💞 Duo Mode (2 players, one team)
+
+Send **`/duo`** in the group and pick a game, or go straight to one with **`/duo sync`** or **`/duo market`**.
+The bot posts a card with a **Join the duo** button. The first 2 people to tap it play together as one team and **share one score**: you win or lose together.
+Once both are in, either of you can tap **▶ Start now**. If only one person joins within 60 seconds, the game is cancelled.
+Duo Mode has its own room in each group, so a duo can play while a group party is on (one duo per group at a time).
+
+**💞 In Sync** (8 rounds, about 1–2 minutes)
+- Each round is a light question about one of you, and it alternates: food, travel, habits, "usually late because…".
+  The player it's about picks their real answer; the partner guesses what they picked. Neither sees the other's pick until the reveal.
+- A match scores 200 plus up to 100 for a quick guess. **3 or more matches in a row double the points.**
+- A round is revealed as soon as you've both picked (12 seconds at most). The game ends with your Sync %.
+- Questions are picked on the server for every game. Edit the list at the top of `src/party/sync.js`.
+
+**🍜 Night Market Duo** (90 seconds)
+- You run a noodle stall together. The **cook** taps a dish (🍜 noodle soup, 🍢 skewers, 🍚 fried rice, or keys 1–3) to put it on one of 3 burners, then taps it when it's ready to move it to the counter. Leave it too long and it burns.
+- The **server** taps a customer to hand them the dish they ordered (or taps a dish on the counter first, then the customer). Customers walk out when their patience bar runs out.
+- Tips are bigger for quick service, and every 3 customers served in a row raise the tip multiplier (up to x3). A wrong dish or a customer walking out resets it.
+- **Roles swap at half time**, and the last 25 seconds are rush hour.
+- The room runs the stall 10 times a second, so both phones always see the same stall.
+
+At the end the bot posts the duo's result and **this week's top duos** for that game. Send **`/duo board`** to see the week's best duos at any time.
+Duo scores live in the group's duo room, not on the `scores` branch, and like party scores they don't count toward the weekly leaderboards.
 
 > **Privacy:** this repository is public, so the `scores` branch can be read by anyone. It shows players' first names, last initials and scores.
 > To keep it private, make the repository private. GitHub Pages on a private repository needs a paid GitHub plan.
@@ -141,6 +165,8 @@ If the last step says it was skipped, open this address once in a browser:
 | Brain Race: number of puzzles, time per puzzle, puzzle types | top of `src/party/quiz.js` |
 | Ship Battle balance (speed, fire rate, shields, pickups) | top of `src/party/battle.js` |
 | Snake Arena (speed, board size, points, respawn) | top of `src/party/snake.js` |
+| In Sync: questions, rounds, time per round, points | top of `src/party/sync.js` |
+| Night Market Duo: dishes, cook times, burners, customers, tips | top of `src/party/market.js` |
 | Time of the Monday results post | `crons` in `telegram/wrangler.toml` (UTC) |
 | Game rules or balance | `src/games/…`. Drone Shooter's rules are in `shooter-engine.js` |
 | Server-side score limits | `src/games/meta.js` |
@@ -169,12 +195,13 @@ To update the games, upload a new `arcade.js` with the same name. Players get it
 
 ```bash
 npm install
-npm test                       # 116 automated tests: game rules, saving and conflicts, ranking, the Telegram server, live parties
+npm test                       # 133 automated tests: game rules, saving and conflicts, ranking, the Telegram server, live parties, Duo Mode
 npm run build                  # dist/ (Confluence) and site/ (Telegram / GitHub Pages)
 
 node dev/local-telegram.mjs    # Telegram version with a pretend Telegram + GitHub → http://localhost:8787/play?name=Dara
 cd telegram && npx wrangler dev # the real Worker locally, with live party rooms (put secrets in telegram/.dev.vars)
 python3 -m http.server 8765    # Confluence version on a pretend Confluence → http://localhost:8765/dev/harness.html?user=dara
+node dev/duo-demo.mjs          # Duo Mode with a bot partner → open dist/duo-demo.html?game=sync (or ?game=market)
 ```
 
 ```
@@ -182,7 +209,7 @@ src/core/       shared: seeded randomness, weeks, ranking, saving, input, sound
 src/games/      the four games (+ meta.js: names, formats and score limits shared with the server)
 src/ui/         the arcade hub and styles
 src/main.js            Confluence entry      src/telegram-main.js   Telegram entry
-src/party/      live party rules and screen
+src/party/      live party and Duo Mode rules and screens
 telegram/       Cloudflare Worker: bot, signed links, GitHub JSON storage, Monday results, party rooms
 web/            GitHub Pages page + game cover image
 ```

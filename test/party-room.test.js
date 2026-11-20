@@ -301,3 +301,97 @@ describe('live party', () => {
     expect(lastText()).toMatch(/for groups/);
   });
 });
+
+describe('Duo Mode', () => {
+  it('/duo shows only duo games, and /party no longer lists them', async () => {
+    await webhook({ message: { text: '/duo', chat: GROUP, from: { id: 1, first_name: 'Dara' } } });
+    const duoKb = [...sent].reverse().find(s => s.method === 'sendMessage').body.reply_markup.inline_keyboard.flat().map(b => b.callback_data);
+    expect(duoKb).toEqual(['party:sync', 'party:market']);
+    await webhook({ message: { text: '/party', chat: GROUP, from: { id: 1, first_name: 'Dara' } } });
+    const partyKb = [...sent].reverse().find(s => s.method === 'sendMessage').body.reply_markup.inline_keyboard.flat().map(b => b.callback_data);
+    expect(partyKb).not.toContain('party:sync');
+    expect(partyKb).not.toContain('party:market');
+  });
+
+  it('a duo runs in its own room next to a party, and Join links point at it', async () => {
+    await webhook({ message: { text: '/party reaction', chat: GROUP, from: { id: 1, first_name: 'Dara' } } });
+    rooms.get(String(GROUP.id)).obj.party.messageId = 776; // the fake Telegram gives every card id 777
+    sent.length = 0;
+    await webhook({ message: { text: '/duo sync', chat: GROUP, from: { id: 1, first_name: 'Dara' } } });
+    const card = sent.find(s => s.method === 'sendGame').body;
+    expect(card.reply_markup.inline_keyboard[0][0].text).toBe('💞 Join the duo');
+    expect(lastText()).toMatch(/In Sync<\/b> · Duo Mode, started by <b>Dara/);
+    const duoRoom = rooms.get(`${GROUP.id}:duo`);
+    expect(duoRoom.obj.party.game).toBe('sync');
+    sent.length = 0;
+    await webhook({ callback_query: { id: 'q', from: { id: 2, first_name: 'Sophea' }, game_short_name: 'arcade', message: { chat: GROUP, message_id: 777 } } });
+    const url = new URL(sent.find(s => s.method === 'answerCallbackQuery').body.url);
+    const claims = await verify(keys.tokenKey, new URLSearchParams(url.hash.slice(1)).get('t'), clock);
+    expect(claims).toMatchObject({ p: duoRoom.obj.party.id, r: 'duo' });
+  });
+
+  it('plays In Sync end to end: picks stay hidden until the reveal, the team shares one score, results name the duo', async () => {
+    await webhook({ message: { text: '/duo sync', chat: GROUP, from: { id: 1, first_name: 'Dara' } } });
+    const r = rooms.get(`${GROUP.id}:duo`);
+    const a = fakeWs('tg-1', 'Dara'), b = fakeWs('tg-2', 'Sophea');
+    r.sockets.push(a, b);
+    join(r.obj.party, { key: 'tg-1', name: 'Dara' }, clock); join(r.obj.party, { key: 'tg-2', name: 'Sophea' }, clock + 1);
+    expect(join(r.obj.party, { key: 'tg-3', name: 'Vanna' }, clock).ok).toBe(false);
+    clock = r.alarm(); await r.obj.alarm();
+    expect(r.obj.party.status).toBe('running');
+    const q0 = a.inbox.find(m => m.type === 'sync-round');
+    expect(q0).toMatchObject({ i: 0, subject: 'tg-1', subjectName: 'Dara', o: expect.any(Array) });
+    for (let i = 0; i < 8; i++) {
+      await r.obj.webSocketMessage(a, JSON.stringify({ type: 'pick', i, c: 1 }));
+      const partner = b.inbox.at(-1);
+      expect(partner).toEqual({ type: 'sync-partner', i, locked: ['tg-1'] }); // no pick shown
+      await r.obj.webSocketMessage(b, JSON.stringify({ type: 'pick', i, c: i === 0 ? 3 : 1 }));
+      expect(b.inbox.filter(m => m.type === 'sync-reveal').at(-1)).toMatchObject({ i, match: i !== 0 });
+      clock += 5000; await r.obj.syncTick();
+    }
+    r.obj.stopSync();
+    expect(r.obj.party.status).toBe('done');
+    const ps = r.obj.party.players;
+    expect(ps['tg-1'].score).toBe(ps['tg-2'].score);
+    expect(r.obj.party.summary).toMatchObject({ matches: 7, percent: 88 });
+    expect(lastText()).toMatch(/💞 <b>In Sync<\/b> · <b>Dara ♥ Sophea<\/b>/);
+    expect(lastText()).toMatch(/7\/8 in sync \(88%\)/);
+    expect(lastText()).toMatch(/This week's top duos[\s\S]*🥇 Dara ♥ Sophea .* ← you/);
+    await webhook({ message: { text: '/duo board', chat: GROUP, from: { id: 1, first_name: 'Dara' } } });
+    expect(lastText()).toMatch(/Top duos[\s\S]*💞 <b>In Sync<\/b>\n🥇 Dara ♥ Sophea/);
+    expect(lastText()).toMatch(/Night Market Duo<\/b>\n<i>No duos yet/);
+  });
+
+  it('plays Night Market Duo: the room runs the stall, only the right role acts, tips are shared', async () => {
+    await webhook({ message: { text: '/duo market', chat: GROUP, from: { id: 1, first_name: 'Dara' } } });
+    const r = rooms.get(`${GROUP.id}:duo`);
+    const a = fakeWs('tg-1', 'Dara'), b = fakeWs('tg-2', 'Sophea');
+    r.sockets.push(a, b);
+    join(r.obj.party, { key: 'tg-1', name: 'Dara' }, clock); join(r.obj.party, { key: 'tg-2', name: 'Sophea' }, clock + 1);
+    clock = r.alarm(); await r.obj.alarm();
+    expect(r.obj.ticker).toBeTruthy();
+    const sim = r.obj.battle;
+    expect(a.inbox.find(m => m.type === 'snap')).toMatchObject({ cook: 'tg-1', server: 'tg-2' });
+    await r.obj.webSocketMessage(b, JSON.stringify({ type: 'cook', d: 1 }));
+    expect(sim.burners.every(x => !x)).toBe(true);
+    await r.obj.webSocketMessage(a, JSON.stringify({ type: 'cook', d: 1 }));
+    expect(sim.burners[0]).toMatchObject({ d: 1 });
+    sim.counter[0] = 0; sim.seats[2] = { id: 9, d: 0, p: 100, max: 100 };
+    await r.obj.webSocketMessage(b, JSON.stringify({ type: 'serve', c: 0, s: 2 }));
+    expect(sim.tips).toBe(20);
+    clock = r.alarm(); await r.obj.alarm();
+    expect(r.obj.ticker).toBeNull();
+    expect(r.obj.party.players['tg-1'].score).toBe(20);
+    expect(r.obj.party.players['tg-2'].score).toBe(20);
+    expect(lastText()).toMatch(/🍜 <b>Night Market Duo<\/b> · <b>Dara ♥ Sophea<\/b>\n\$20 in tips · 1 served/);
+  });
+
+  it('cancels a duo when the partner never joins', async () => {
+    await webhook({ message: { text: '/duo sync', chat: GROUP, from: { id: 1, first_name: 'Dara' } } });
+    const r = rooms.get(`${GROUP.id}:duo`);
+    join(r.obj.party, { key: 'tg-1', name: 'Dara' }, clock);
+    clock = r.alarm(); await r.obj.alarm();
+    expect(r.obj.party.status).toBe('cancelled');
+    expect(lastText()).toMatch(/In Sync cancelled: only <b>Dara<\/b> joined[\s\S]*\/duo/);
+  });
+});

@@ -5,6 +5,8 @@
 
 import { buildTimeline, scoreHit, FAKE_PENALTY, MISS_PENALTY, DURATION } from '../games/reaction.js';
 import { QUIZ_SECONDS } from './quiz.js';
+import { SYNC_SECONDS } from './sync.js';
+import { DURATION as MARKET_SECONDS } from './market.js';
 
 export const JOIN_SECONDS = 60;      // lobby length after /party
 export const MIN_PLAYERS = 2;        // fewer than this → cancelled
@@ -22,7 +24,14 @@ export const PARTY_GAMES = {
     pitch: "Everyone's snake in one arena. Eat food to grow (+1, golden +3). If another snake crashes into you, you get +5. Hit a wall or a snake and you respawn small. Most points wins." },
   battle: { title: 'Ship Battle', emoji: '🚀', seconds: 90, maxPlayers: 8,
     pitch: 'Everyone flies a ship in one arena. Your ship fires forward on its own, so steer to aim. 3 hits knock a ship out, and the most KOs wins.' },
+  // Duo Mode: exactly 2 players on one team, sharing one score.
+  sync: { title: 'In Sync', emoji: '💞', seconds: SYNC_SECONDS, maxPlayers: 2, duo: true,
+    pitch: '8 questions about the two of you. Each round is about one player: they answer for themselves and their partner guesses. Matching answers score for the team, and 3 matches in a row doubles the points.' },
+  market: { title: 'Night Market Duo', emoji: '🍜', seconds: MARKET_SECONDS, maxPlayers: 2, duo: true,
+    pitch: 'Run a noodle stall together for 90 seconds. One of you cooks, the other serves customers before they lose patience. Roles swap at half time, and the tips are shared.' },
 };
+export const DUO_GAMES = Object.keys(PARTY_GAMES).filter(g => PARTY_GAMES[g].duo);
+export const isDuo = p => !!PARTY_GAMES[p?.game]?.duo;
 const CLOCK_SLACK = 0.4;             // seconds: tolerated clock difference
 const LATENCY_SLACK = 1.2;           // seconds: tolerated network delay
 
@@ -44,7 +53,7 @@ export function join(p, user, now) {
   if (!isActive(p)) return { ok: false, reason: 'This party is over. Send /party to start a new one.' };
   if (now > p.endAt - LATE_JOIN_CUTOFF * 1000) return { ok: false, reason: 'Too late to join this round.' };
   if (!p.players[user.key]) {
-    if (Object.keys(p.players).length >= PARTY_GAMES[p.game || 'reaction'].maxPlayers) return { ok: false, reason: 'This party is full. Catch the next one!' };
+    if (Object.keys(p.players).length >= PARTY_GAMES[p.game || 'reaction'].maxPlayers) return { ok: false, reason: isDuo(p) ? 'This duo already has two players. Send /duo to start your own.' : 'This party is full. Catch the next one!' };
     p.players[user.key] = { name: user.name, score: 0, hits: 0, fakes: 0, misses: 0, kos: 0, downs: 0, joinedAt: now };
   }
   return { ok: true };
@@ -115,6 +124,6 @@ export function results(p) {
 
 /** What clients are allowed to see. */
 export const publicState = p => p && ({
-  id: p.id, game: p.game || 'reaction', status: p.status, seed: p.seed, startAt: p.startAt, endAt: p.endAt, claimed: p.claimed, startedBy: p.startedBy || null,
+  id: p.id, game: p.game || 'reaction', duo: isDuo(p), summary: p.summary || null, status: p.status, seed: p.seed, startAt: p.startAt, endAt: p.endAt, claimed: p.claimed, startedBy: p.startedBy || null,
   players: results(p).map(({ key, name, score, hits, fakes, kos, downs, place }) => ({ key, name, score, hits, fakes, kos, downs, place })),
 });
