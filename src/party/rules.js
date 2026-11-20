@@ -17,7 +17,7 @@ export const PARTY_GAMES = {
   quiz: { title: 'Brain Race', emoji: '💡', seconds: QUIZ_SECONDS, maxPlayers: 50,
     pitch: '8 quick IQ puzzles: number patterns, maths, time and logic. Everyone gets the same puzzle at the same moment. Right answers score more the faster you are, plus a bonus for the first correct answer. One try per puzzle!' },
   draw: { title: 'Draw & Guess', emoji: '🎨', seconds: 300, maxPlayers: 12,
-    pitch: 'Take turns drawing a secret word while everyone else guesses. Quick correct guesses score more, and the artist scores for every player who gets it.' },
+    pitch: '3 rounds. Take turns drawing a secret word while everyone else guesses. Quick correct guesses score more, and the artist scores for every player who gets it.' },
   snake: { title: 'Snake Arena', emoji: '🐍', seconds: 90, maxPlayers: 8,
     pitch: "Everyone's snake in one arena. Eat food to grow (+1, golden +3). If another snake crashes into you, you get +5. Hit a wall or a snake and you respawn small. Most points wins." },
   battle: { title: 'Ship Battle', emoji: '🚀', seconds: 90, maxPlayers: 8,

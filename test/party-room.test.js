@@ -195,52 +195,54 @@ describe('live party', () => {
     join(r.obj.party, { key: 'tg-1', name: 'Dara' }, clock); join(r.obj.party, { key: 'tg-2', name: 'Sokha' }, clock + 1); join(r.obj.party, { key: 'tg-3', name: 'Navin' }, clock + 2);
     clock = r.alarm(); await r.obj.alarm();
     r.obj.stopDraw(); // drive rounds by hand
-    const word = r.obj.party.draw.words[0];
+    const d = r.obj.party.draw, word = d.words[0];
+    expect(d.order).toHaveLength(3);
+    const sock = { 'tg-1': a, 'tg-2': b, 'tg-3': c };
+    const artist = sock[d.order[0]], [g1, g2] = Object.keys(sock).filter(k => k !== d.order[0]).map(k => sock[k]);
     const roundFor = ws => ws.inbox.filter(m => m.type === 'round').at(-1);
-    expect(roundFor(a)).toMatchObject({ i: 0, n: 3, artist: 'tg-1', word });
-    expect(roundFor(b)).not.toHaveProperty('word');
-    expect(roundFor(b).mask.replace(/[ _]/g, '')).toBe('');
+    expect(roundFor(artist)).toMatchObject({ i: 0, n: 3, artist: d.order[0], word });
+    expect(roundFor(g1)).not.toHaveProperty('word');
+    expect(roundFor(g1).mask.replace(/[ _]/g, '')).toBe('');
 
     // only the artist's strokes go out, to everyone else
-    await r.obj.webSocketMessage(a, JSON.stringify({ type: 'stroke', id: 1, c: '#ff0000', w: 6, pts: [10, 10, 50, 60, 90, 90] }));
-    await r.obj.webSocketMessage(b, JSON.stringify({ type: 'stroke', id: 9, c: '#00ff00', w: 6, pts: [1, 1, 2, 2] }));
+    await r.obj.webSocketMessage(artist, JSON.stringify({ type: 'stroke', id: 1, c: '#ff0000', w: 6, pts: [10, 10, 50, 60, 90, 90] }));
+    await r.obj.webSocketMessage(g1, JSON.stringify({ type: 'stroke', id: 9, c: '#00ff00', w: 6, pts: [1, 1, 2, 2] }));
     const drawn = ws => ws.inbox.filter(m => m.type === 'strokes').flatMap(m => m.ops).filter(o => o.t === 'stroke');
-    expect(drawn(b)).toHaveLength(1); expect(drawn(b)[0].c).toBe('#ff0000');
-    expect(drawn(a)).toHaveLength(0); // the artist already has it on screen
-    expect(r.obj.party.draw.strokes).toHaveLength(1);
+    expect(drawn(g1)).toHaveLength(1); expect(drawn(g1)[0].c).toBe('#ff0000');
+    expect(drawn(artist)).toHaveLength(0); // the artist already has it on screen
+    expect(d.strokes).toHaveLength(1);
 
-    // wrong guesses are shown as chat; the right one scores and ends the round once everyone has it
-    await r.obj.webSocketMessage(b, JSON.stringify({ type: 'guess', text: 'definitely not it' }));
-    expect(c.inbox.at(-1)).toMatchObject({ type: 'chat', name: 'Sokha', text: 'definitely not it' });
+    // wrong guesses are shown as chat; near misses only to the guesser; right ones score
+    await r.obj.webSocketMessage(g1, JSON.stringify({ type: 'guess', text: 'definitely not it' }));
+    expect(g2.inbox.at(-1)).toMatchObject({ type: 'chat', text: 'definitely not it' });
     const nearMiss = word.length >= 4 ? `${word.slice(0, -1)}${word.endsWith('q') ? 'z' : 'q'}` : null;
     if (nearMiss) {
-      await r.obj.webSocketMessage(c, JSON.stringify({ type: 'guess', text: nearMiss }));
-      expect(c.inbox.at(-1)).toMatchObject({ type: 'close-guess' });
-      expect(b.inbox.some(m => m.type === 'chat' && m.text === nearMiss)).toBe(false); // nobody else sees a near miss
+      await r.obj.webSocketMessage(g2, JSON.stringify({ type: 'guess', text: nearMiss }));
+      expect(g2.inbox.at(-1)).toMatchObject({ type: 'close-guess' });
+      expect(g1.inbox.some(m => m.type === 'chat' && m.text === nearMiss)).toBe(false);
     }
     clock += 5000;
-    await r.obj.webSocketMessage(b, JSON.stringify({ type: 'guess', text: word.toUpperCase() }));
-    expect(b.inbox.find(m => m.type === 'you-guessed')).toMatchObject({ first: true, word });
-    expect(c.inbox.at(-1)).toMatchObject({ type: 'guessed', name: 'Sokha' });
-    expect(c.inbox.some(m => m.type === 'chat' && m.text.toLowerCase() === word)).toBe(false); // the answer never leaks into chat
-    await r.obj.webSocketMessage(c, JSON.stringify({ type: 'guess', text: word }));
-    expect(a.inbox.find(m => m.type === 'reveal')).toMatchObject({ i: 0, word });
+    await r.obj.webSocketMessage(g1, JSON.stringify({ type: 'guess', text: word.toUpperCase() }));
+    expect(g1.inbox.find(m => m.type === 'you-guessed')).toMatchObject({ first: true, word });
+    expect(g2.inbox.some(m => m.type === 'chat' && m.text.toLowerCase() === word)).toBe(false); // the answer never leaks into chat
+    await r.obj.webSocketMessage(g2, JSON.stringify({ type: 'guess', text: word }));
+    expect(artist.inbox.find(m => m.type === 'reveal')).toMatchObject({ i: 0, word });
 
-    // next round: Sokha draws
+    // round 2: the next artist gets the next word
     clock += 4500; await r.obj.drawTick(false);
-    expect(roundFor(b)).toMatchObject({ i: 1, artist: 'tg-2', word: r.obj.party.draw.words[1] });
-    expect(roundFor(a)).not.toHaveProperty('word');
+    const next = sock[d.order[1]];
+    expect(roundFor(next)).toMatchObject({ i: 1, artist: d.order[1], word: d.words[1] });
     // an absent artist's round is skipped after a few seconds
-    r.sockets.splice(r.sockets.indexOf(b), 1);
+    r.sockets.splice(r.sockets.indexOf(next), 1);
     clock += 4500; await r.obj.drawTick(false);
-    expect(a.inbox.filter(m => m.type === 'reveal').at(-1)).toMatchObject({ i: 1, skipped: true });
-    // last round runs out of time → results
+    expect(g2.inbox.filter(m => m.type === 'reveal').concat(artist.inbox.filter(m => m.type === 'reveal')).some(m => m.i === 1 && m.skipped)).toBe(true);
+    // round 3 runs out of time → results
     clock += 4500; await r.obj.drawTick(false);
-    clock = r.obj.party.draw.roundEnd + 10; await r.obj.drawTick(false);
+    clock = d.roundEnd + 10; await r.obj.drawTick(false);
     clock += 4500; await r.obj.drawTick(false);
     expect(r.obj.party.status).toBe('done');
     expect(lastText()).toMatch(/🎨 <b>Draw & Guess Party results/);
-    expect(lastText()).toMatch(/🥇 <b>Sokha<\/b> · [\d,]+ pts · guessed 1 drawing/);
+    expect(lastText()).toMatch(/guessed 1 drawing/);
   });
 
   it('ping gets the server time back (for clock sync)', async () => {

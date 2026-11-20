@@ -53,8 +53,8 @@ As soon as 2 players are in, anyone in the lobby can tap **▶ Start now**. Ever
 - **Most KOs wins.** Ties go to whoever was knocked out fewer times.
 - Controls: mouse (the ship flies toward the cursor), arrow keys / WASD, or drag anywhere on a phone.
 
-**🎨 Draw & Guess** (one round per player, up to 5 rounds of 50 seconds; 2–12 players)
-- Players take turns as the artist. Only the artist sees the secret word (cat, coffee, tuk tuk…) and draws it, and everyone sees the drawing appear live.
+**🎨 Draw & Guess** (3 rounds of 50 seconds; 2–12 players)
+- Players take turns as the artist, in a random order. With 2 players that's A, B, then A again; with more than 3 players, three different people draw. Only the artist sees the secret word (cat, coffee, tuk tuk…) and draws it, and everyone sees the drawing appear live.
 - Everyone else types guesses. Wrong guesses show in the chat for laughs. Near misses ("elefant") show only to the person who typed them, as "very close!".
   Halfway through, one letter is revealed as a hint.
 - A right guess scores 100 plus up to 200 for speed, plus 50 for the first correct guess. The artist gets +60 for every player who guesses it.

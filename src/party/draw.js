@@ -8,7 +8,7 @@ import { createRng } from '../core/rng.js';
 
 export const ROUND_SECONDS = 50;
 export const REVEAL_SECONDS = 4;
-export const MAX_ROUNDS = 5;
+export const ROUNDS = 3;              // every game is 3 drawing turns
 export const HINT_AT = 0.5;            // reveal one letter halfway through
 export const ARTIST_POINTS = 60, FIRST_BONUS = 50;
 export const MAX_STROKE_POINTS = 25000; // per round, to keep things light
@@ -66,9 +66,16 @@ export function hintIndex(seed, round, word) {
 
 export const guessPoints = (secondsLeft, first) => 100 + Math.round(200 * Math.max(0, Math.min(1, secondsLeft / ROUND_SECONDS))) + (first ? FIRST_BONUS : 0);
 
-/** Set up the rounds when the party starts. Artists in the order they joined. */
+/**
+ * Set up the 3 rounds when the party starts. Players take turns as the artist
+ * in a random order: with 2 players that's A, B, A; with more than 3, three
+ * different people draw.
+ */
 export function setupDraw(p, now) {
-  const order = Object.entries(p.players).sort((a, b) => a[1].joinedAt - b[1].joinedAt).map(([k]) => k).slice(0, MAX_ROUNDS);
+  const rng = createRng(`artists:${p.secret || p.seed}`);
+  const players = Object.entries(p.players).sort((a, b) => a[1].joinedAt - b[1].joinedAt).map(([k]) => k);
+  for (let i = players.length - 1; i > 0; i--) { const j = Math.floor(rng.next() * (i + 1)); [players[i], players[j]] = [players[j], players[i]]; }
+  const order = Array.from({ length: ROUNDS }, (_, i) => players[i % players.length]);
   p.draw = { order, words: pickWords(p.secret || p.seed, order.length), round: -1, phase: 'reveal', revealEnd: now, guessed: {}, strokes: [], points: 0, hint: false };
   p.endAt = now + order.length * (ROUND_SECONDS + REVEAL_SECONDS) * 1000 + 2000;
 }

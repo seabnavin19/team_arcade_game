@@ -168,7 +168,7 @@ export function createPartyApp(root, { api, token, sound, onExit, WebSocketImpl 
         ? 'Controls: move with the mouse, arrow keys or WASD. On a phone, drag anywhere to steer.'
         : p.game === 'quiz' ? 'Controls: tap an answer, or press 1–4. You get one try per puzzle.'
         : p.game === 'snake' ? 'Controls: arrow keys or WASD. On a phone, swipe on the board or use the arrow buttons.'
-        : p.game === 'draw' ? 'When it’s your turn, draw with your mouse or finger. Otherwise type your guesses. Everyone draws once (up to 5 rounds).'
+        : p.game === 'draw' ? 'When it’s your turn, draw with your mouse or finger. Otherwise type your guesses. 3 rounds, and players take turns drawing.'
         : 'Controls: click or tap the targets.';
       el.canvaswrap.hidden = p.game === 'quiz';
       el.quiz.hidden = p.game !== 'quiz';

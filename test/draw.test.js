@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { WORDS, normalize, checkGuess, maskWord, pickWords, hintIndex, guessPoints, setupDraw, beginRound, guess, guessersLeft, MAX_ROUNDS, ROUND_SECONDS, ARTIST_POINTS } from '../src/party/draw.js';
+import { WORDS, normalize, checkGuess, maskWord, pickWords, hintIndex, guessPoints, setupDraw, beginRound, guess, guessersLeft, ROUNDS, ROUND_SECONDS, ARTIST_POINTS } from '../src/party/draw.js';
 import { createParty, join, start } from '../src/party/rules.js';
 
 describe('draw & guess rules', () => {
@@ -34,25 +34,35 @@ describe('draw & guess rules', () => {
     const p = createParty({ id: 'd', chat: -1, seed: 'x', now: 0, game: 'draw', joinSeconds: 0 });
     ['a', 'b', 'c'].forEach((k, i) => join(p, { key: k, name: k.toUpperCase() }, i));
     start(p); setupDraw(p, 1000);
-    expect(p.draw.order).toEqual(['a', 'b', 'c']);
+    expect([...p.draw.order].sort()).toEqual(['a', 'b', 'c']); // 3 players → each draws once, random order
     beginRound(p, 1000);
+    const [artist, g1, g2] = [p.draw.order[0], ...['a', 'b', 'c'].filter(k => k !== p.draw.order[0])];
     const word = p.draw.words[0];
-    expect(guess(p, 'a', word, 2000).kind).toBe('ignored');           // the artist can't guess
-    expect(guess(p, 'b', 'zzz', 2000).kind).toBe('wrong');
-    const r = guess(p, 'b', word, 1000 + 10000);
+    expect(guess(p, artist, word, 2000).kind).toBe('ignored');        // the artist can't guess
+    expect(guess(p, g1, 'zzz', 2000).kind).toBe('wrong');
+    const r = guess(p, g1, word, 1000 + 10000);
     expect(r).toMatchObject({ kind: 'right', first: true, pts: guessPoints(ROUND_SECONDS - 10, true) });
-    expect(guess(p, 'b', word, 12000).kind).toBe('ignored');          // only once
+    expect(guess(p, g1, word, 12000).kind).toBe('ignored');          // only once
     expect(guessersLeft(p)).toBe(1);
-    guess(p, 'c', word, 30000);
+    guess(p, g2, word, 30000);
     expect(guessersLeft(p)).toBe(0);
-    expect(p.players.a.score).toBe(2 * ARTIST_POINTS);
-    expect(p.players.b.hits).toBe(1);
+    expect(p.players[artist].score).toBe(2 * ARTIST_POINTS);
+    expect(p.players[g1].hits).toBe(1);
   });
-  it('caps the number of rounds and sizes the party length to fit', () => {
-    const p = createParty({ id: 'd', chat: -1, seed: 'x', now: 0, game: 'draw', joinSeconds: 0 });
-    for (let i = 0; i < 8; i++) join(p, { key: `p${i}`, name: `P${i}` }, i);
-    start(p); setupDraw(p, 0);
-    expect(p.draw.order).toHaveLength(MAX_ROUNDS);
-    expect(p.endAt).toBeGreaterThan(MAX_ROUNDS * ROUND_SECONDS * 1000);
+  it('always 3 rounds: 2 players take turns A, B, A; 8 players → 3 different artists', () => {
+    expect(ROUNDS).toBe(3);
+    const two = createParty({ id: 'd', chat: -1, seed: 'x', now: 0, game: 'draw', joinSeconds: 0 });
+    join(two, { key: 'a', name: 'A' }, 0); join(two, { key: 'b', name: 'B' }, 1);
+    start(two); setupDraw(two, 0);
+    expect(two.draw.order).toHaveLength(3);
+    expect(two.draw.order[0]).toBe(two.draw.order[2]);
+    expect(two.draw.order[0]).not.toBe(two.draw.order[1]);
+    expect(new Set(two.draw.words).size).toBe(3);
+    const eight = createParty({ id: 'd', chat: -1, seed: 'y', now: 0, game: 'draw', joinSeconds: 0 });
+    for (let i = 0; i < 8; i++) join(eight, { key: `p${i}`, name: `P${i}` }, i);
+    start(eight); setupDraw(eight, 0);
+    expect(new Set(eight.draw.order).size).toBe(3);
+    expect(eight.endAt).toBeGreaterThan(3 * ROUND_SECONDS * 1000);
+    expect(eight.endAt).toBeLessThan(4 * ROUND_SECONDS * 1000);
   });
 });
