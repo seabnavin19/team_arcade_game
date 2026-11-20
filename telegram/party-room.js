@@ -6,6 +6,7 @@ import { createParty, join, hit, miss, start, startNow, finish, timelineFor, pub
 import { createBattle, addShip, setInput, step as stepBattle, snapshot as battleSnapshot, battleStats } from '../src/party/battle.js';
 import { createSnakeGame, addSnake, setDir, step as stepSnake, snapshot as snakeSnapshot, snakeStats, TICK_MS as SNAKE_TICK_MS } from '../src/party/snake.js';
 
+import { setupDraw, beginRound, guess as drawGuess, guessersLeft, maskWord, hintIndex, HINT_AT, MAX_STROKE_POINTS } from '../src/party/draw.js';
 import { buildQuiz, phaseAt, answer as quizAnswer, questionMsg, QUESTIONS } from '../src/party/quiz.js';
 
 // Real-time party games the room simulates itself, and how.
@@ -32,6 +33,7 @@ export class PartyRoom {
     this.quiz = null;       // Brain Race questions (with answers: never sent early)
     this.quizTicker = null;
     this.quizSent = { q: -1, r: -1 };
+    this.drawTicker = null;
   }
 
   async load() {
@@ -66,8 +68,8 @@ export class PartyRoom {
 
     if (url.pathname === '/create') {
       if (isActive(this.party)) return Response.json({ created: false, party: publicState(this.party) });
-      this.stopBattle(); this.stopQuiz(); this.quiz = null; this.quizSent = { q: -1, r: -1 };
-      this.party = createParty({ id: crypto.randomUUID().slice(0, 8), chat: body.chat, seed: crypto.randomUUID(), now: this.now(), joinSeconds: body.joinSeconds, game: body.game });
+      this.stopBattle(); this.stopQuiz(); this.stopDraw(); this.quiz = null; this.quizSent = { q: -1, r: -1 };
+      this.party = createParty({ id: crypto.randomUUID().slice(0, 8), chat: body.chat, seed: crypto.randomUUID(), secret: crypto.randomUUID(), now: this.now(), joinSeconds: body.joinSeconds, game: body.game });
       this.timeline = timelineFor(this.party);
       await this.save();
       await this.ctx.storage.setAlarm(this.party.startAt);
@@ -98,6 +100,11 @@ export class PartyRoom {
       if (joined.ok && live && this.party.status === 'running' && this.ensureBattle()) live.add(this.battle, user.key, user.name);
       server.send(JSON.stringify({ ...this.stateMsg(), you: user.key, joinError: joined.ok ? null : joined.reason }));
       if (joined.ok) this.broadcast(this.stateMsg());
+      if (this.party.game === 'draw' && this.party.status === 'running' && this.party.draw) {
+        this.ensureDraw();
+        server.send(JSON.stringify(this.roundMsg(user.key)));
+        if (this.party.draw.strokes.length) server.send(JSON.stringify({ type: 'strokes', ops: this.party.draw.strokes }));
+      }
       if (this.party.game === 'quiz' && this.party.status === 'running' && this.ensureQuiz()) {
         const ph = phaseAt(this.party.startAt, this.now());
         if (ph.phase === 'question') server.send(JSON.stringify(questionMsg(this.quiz, ph)));
@@ -118,6 +125,42 @@ export class PartyRoom {
     if (!p) return;
     if (msg.type === 'input' || msg.type === 'dir') {
       if (LIVE[p.game] && p.status === 'running' && this.ensureBattle()) LIVE[p.game].input(this.battle, me.key, msg);
+      return;
+    }
+    if (p.game === 'draw' && (msg.type === 'stroke' || msg.type === 'undo' || msg.type === 'clear' || msg.type === 'guess')) {
+      const d = p.draw;
+      if (p.status === 'running') this.ensureDraw(); // after a restart, pick the rounds back up
+      if (p.status !== 'running' || !d || d.phase !== 'drawing') return;
+      const artist = d.order[d.round];
+      if (msg.type === 'guess') {
+        if (me.key === artist) return;
+        const text = String(msg.text || '').slice(0, 40);
+        const r = drawGuess(p, me.key, text, this.now());
+        if (r.kind === 'ignored') return;
+        if (r.kind === 'right') {
+          await this.save();
+          ws.send(JSON.stringify({ type: 'you-guessed', pts: r.pts, first: r.first, word: d.words[d.round] }));
+          this.broadcast({ type: 'guessed', key: me.key, name: me.name, pts: r.pts, first: r.first, party: publicState(p) });
+          if (guessersLeft(p) === 0) await this.drawTick(true);
+        } else if (r.kind === 'close') {
+          ws.send(JSON.stringify({ type: 'close-guess', text })); // only you see a near miss; it would give the word away
+        } else {
+          this.broadcast({ type: 'chat', name: me.name, key: me.key, text }); // wrong guesses are part of the fun
+        }
+        return;
+      }
+      if (me.key !== artist) return; // only the artist draws
+      let op;
+      if (msg.type === 'stroke') {
+        const pts = Array.isArray(msg.pts) ? msg.pts.slice(0, 400).map(n => Math.max(0, Math.min(800, Math.round(Number(n) || 0)))) : [];
+        const used = d.strokes.reduce((n, o) => n + (o.pts ? o.pts.length : 0), 0);
+        if (pts.length < 2 || used + pts.length > MAX_STROKE_POINTS) return;
+        op = { t: 'stroke', id: Number(msg.id) || 0, c: /^#[0-9a-f]{6}$/i.test(msg.c) ? msg.c : '#1b1b2f', w: Math.max(2, Math.min(28, Number(msg.w) || 5)), pts };
+      } else op = { t: msg.type, id: Number(msg.id) || 0 };
+      if (op.t === 'clear') d.strokes = [];
+      else if (op.t === 'undo') { const id = d.strokes.filter(o => o.t === 'stroke').at(-1)?.id; d.strokes = d.strokes.filter(o => o.id !== id); op.id = id; }
+      else d.strokes.push(op);
+      for (const sock of this.ctx.getWebSockets()) { if (sock !== ws) { try { sock.send(JSON.stringify({ type: 'strokes', ops: [op] })); } catch { /* closed */ } } }
       return;
     }
     if (msg.type === 'answer') {
@@ -200,7 +243,7 @@ export class PartyRoom {
   ensureQuiz() {
     const p = this.party;
     if (!p || p.game !== 'quiz') return false;
-    if (!this.quiz) this.quiz = buildQuiz(p.seed);
+    if (!this.quiz) this.quiz = buildQuiz(p.secret || p.seed);
     if (p.status === 'running' && !this.quizTicker) this.quizTicker = setInterval(() => this.quizTick(), 200);
     return true;
   }
@@ -231,6 +274,59 @@ export class PartyRoom {
     this.quizTicker = null;
   }
 
+  // ---------- Draw & Guess rounds ----------
+  roundMsg(forKey) {
+    const p = this.party, d = p.draw;
+    const artist = d.order[d.round];
+    const shown = d.hint ? [hintIndex(p.seed, d.round, d.words[d.round])] : [];
+    return {
+      type: 'round', i: d.round, n: d.order.length, phase: d.phase, artist, artistName: p.players[artist]?.name || '?',
+      endsAt: d.phase === 'drawing' ? d.roundEnd : d.revealEnd, mask: maskWord(d.words[d.round] || '', shown),
+      ...(forKey === artist || d.phase === 'reveal' ? { word: d.words[d.round] } : {}),
+      guessed: Object.keys(d.guessed),
+    };
+  }
+
+  sendRound() {
+    for (const ws of this.ctx.getWebSockets()) {
+      const me = ws.deserializeAttachment() || {};
+      try { ws.send(JSON.stringify(this.roundMsg(me.key))); } catch { /* closed */ }
+    }
+  }
+
+  ensureDraw() {
+    if (this.drawTicker || this.party?.game !== 'draw' || this.party.status !== 'running') return;
+    this.drawTicker = setInterval(() => { this.drawTick(false).catch(e => console.log('drawTick', e.message)); }, 250);
+  }
+
+  stopDraw() { if (this.drawTicker) clearInterval(this.drawTicker); this.drawTicker = null; }
+
+  async drawTick(everyoneGuessed) {
+    const p = this.party, d = p?.draw;
+    if (!d || p.status !== 'running') return;
+    const now = this.now();
+    if (d.phase === 'drawing') {
+      const artist = d.order[d.round];
+      const artistHere = this.ctx.getWebSockets().some(ws => (ws.deserializeAttachment() || {}).key === artist);
+      const absent = !artistHere && now - d.roundStart > 4000 && !d.strokes.length;
+      if (!d.hint && now >= d.roundStart + (d.roundEnd - d.roundStart) * HINT_AT && [...d.words[d.round]].filter(c => c !== ' ').length >= 4) {
+        d.hint = true; this.sendRound();
+      }
+      if (everyoneGuessed || now >= d.roundEnd || absent) {
+        d.phase = 'reveal'; d.revealEnd = now + 4000; d.skipped = absent;
+        await this.save();
+        this.broadcast({ type: 'reveal', i: d.round, word: d.words[d.round], skipped: absent, artistName: p.players[artist]?.name, party: publicState(p) });
+        this.sendRound();
+      }
+    } else if (now >= d.revealEnd) {
+      if (d.round + 1 >= d.order.length) { this.stopDraw(); await this.finishParty(); return; }
+      beginRound(p, now);
+      await this.save();
+      this.broadcast({ type: 'strokes', ops: [{ t: 'clear' }] });
+      this.sendRound();
+    }
+  }
+
   // ---------- timers ----------
   async alarm() {
     await this.load();
@@ -243,7 +339,8 @@ export class PartyRoom {
       if (status === 'running') {
         if (LIVE[p.game]) { this.ensureBattle(); this.broadcast(this.liveSnap()); }
         if (p.game === 'quiz') { this.quizSent = { q: -1, r: -1 }; this.ensureQuiz(); this.quizTick(); }
-        await this.ctx.storage.setAlarm(LIVE[p.game] ? p.endAt : p.endAt + 1500); // taps get a little grace
+        if (p.game === 'draw') { setupDraw(p, this.now()); await this.save(); this.broadcast(this.stateMsg()); this.ensureDraw(); await this.drawTick(false); }
+        await this.ctx.storage.setAlarm(LIVE[p.game] ? p.endAt : p.endAt + 1500); // taps get a little grace (and a backstop for Draw & Guess)
       } else {
         const names = Object.values(p.players).map(x => x.name);
         await this.tg('sendMessage', {
@@ -252,6 +349,15 @@ export class PartyRoom {
         });
       }
     } else if (p.status === 'running') {
+      await this.finishParty();
+    }
+  }
+
+  async finishParty() {
+    const p = this.party;
+    if (!p || p.status !== 'running') return;
+    {
+      this.stopDraw();
       if (LIVE[p.game]) { this.copyBattleStats(); this.stopBattle(); }
       if (p.game === 'quiz') { this.ensureQuiz(); this.quizTick(); this.stopQuiz(); }
       const res = finish(p);
@@ -264,6 +370,8 @@ export class PartyRoom {
         ? `${r.score} pts · ${r.hits} food · ${r.kos} ${r.kos === 1 ? 'KO' : 'KOs'}`
         : p.game === 'quiz'
         ? `${r.score.toLocaleString('en-US')} (${r.hits}/${QUESTIONS} right)`
+        : p.game === 'draw'
+        ? `${r.score.toLocaleString('en-US')} pts · guessed ${r.hits} ${r.hits === 1 ? 'drawing' : 'drawings'}`
         : `${r.score.toLocaleString('en-US')} (${r.hits} hits${r.fakes ? `, ${r.fakes} fakes` : ''})`);
       const lines = res.slice(0, 10).map(r => `${MEDALS[r.place - 1] || `${r.place}.`} <b>${esc(r.name)}</b> · ${detail(r)}`);
       await this.tg('sendMessage', {

@@ -26,7 +26,9 @@ export function createInput(canvas, { width, height, onEscape, captureAllKeys = 
   };
   const onUp = e => { pointer.down = false; listeners.pointerup.forEach(f => f(pointer, e)); };
   const onLeave = () => { if (!pointer.down) pointer.inside = false; };
+  const typingInBox = e => { const t = e.target; return t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable); };
   const onKeyDown = e => {
+    if (typingInBox(e)) return; // let text boxes (e.g. Draw & Guess guesses) get every key, spaces included
     if (e.key === 'Escape') { e.preventDefault(); e.stopImmediatePropagation(); onEscape?.(); return; }
     if (e.ctrlKey || e.metaKey || e.altKey) return; // leave browser shortcuts alone
     if (captureAllKeys || SWALLOW.has(e.key)) e.stopImmediatePropagation();
@@ -34,7 +36,7 @@ export function createInput(canvas, { width, height, onEscape, captureAllKeys = 
     keys.add(e.key);
     listeners.keydown.forEach(f => f(e));
   };
-  const onKeyUp = e => { keys.delete(e.key); if (captureAllKeys) e.stopImmediatePropagation(); };
+  const onKeyUp = e => { keys.delete(e.key); if (captureAllKeys && !typingInBox(e)) e.stopImmediatePropagation(); };
   const onBlur = () => keys.clear();
 
   canvas.addEventListener('pointerdown', onDown);

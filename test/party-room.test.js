@@ -186,6 +186,63 @@ describe('live party', () => {
     expect(lastText()).toMatch(/🥇 <b>Sokha<\/b> · 5 pts · 0 food · 1 KO/);
   });
 
+  it('plays Draw & Guess: only the artist sees the word and draws; guesses score; rounds rotate', async () => {
+    await webhook({ message: { text: '/party draw', chat: GROUP, from: { id: 1, first_name: 'Dara' } } });
+    const r = rooms.get(String(GROUP.id));
+    expect(r.obj.party.game).toBe('draw');
+    const a = fakeWs('tg-1', 'Dara'), b = fakeWs('tg-2', 'Sokha'), c = fakeWs('tg-3', 'Navin');
+    r.sockets.push(a, b, c);
+    join(r.obj.party, { key: 'tg-1', name: 'Dara' }, clock); join(r.obj.party, { key: 'tg-2', name: 'Sokha' }, clock + 1); join(r.obj.party, { key: 'tg-3', name: 'Navin' }, clock + 2);
+    clock = r.alarm(); await r.obj.alarm();
+    r.obj.stopDraw(); // drive rounds by hand
+    const word = r.obj.party.draw.words[0];
+    const roundFor = ws => ws.inbox.filter(m => m.type === 'round').at(-1);
+    expect(roundFor(a)).toMatchObject({ i: 0, n: 3, artist: 'tg-1', word });
+    expect(roundFor(b)).not.toHaveProperty('word');
+    expect(roundFor(b).mask.replace(/[ _]/g, '')).toBe('');
+
+    // only the artist's strokes go out, to everyone else
+    await r.obj.webSocketMessage(a, JSON.stringify({ type: 'stroke', id: 1, c: '#ff0000', w: 6, pts: [10, 10, 50, 60, 90, 90] }));
+    await r.obj.webSocketMessage(b, JSON.stringify({ type: 'stroke', id: 9, c: '#00ff00', w: 6, pts: [1, 1, 2, 2] }));
+    const drawn = ws => ws.inbox.filter(m => m.type === 'strokes').flatMap(m => m.ops).filter(o => o.t === 'stroke');
+    expect(drawn(b)).toHaveLength(1); expect(drawn(b)[0].c).toBe('#ff0000');
+    expect(drawn(a)).toHaveLength(0); // the artist already has it on screen
+    expect(r.obj.party.draw.strokes).toHaveLength(1);
+
+    // wrong guesses are shown as chat; the right one scores and ends the round once everyone has it
+    await r.obj.webSocketMessage(b, JSON.stringify({ type: 'guess', text: 'definitely not it' }));
+    expect(c.inbox.at(-1)).toMatchObject({ type: 'chat', name: 'Sokha', text: 'definitely not it' });
+    const nearMiss = word.length >= 4 ? `${word.slice(0, -1)}${word.endsWith('q') ? 'z' : 'q'}` : null;
+    if (nearMiss) {
+      await r.obj.webSocketMessage(c, JSON.stringify({ type: 'guess', text: nearMiss }));
+      expect(c.inbox.at(-1)).toMatchObject({ type: 'close-guess' });
+      expect(b.inbox.some(m => m.type === 'chat' && m.text === nearMiss)).toBe(false); // nobody else sees a near miss
+    }
+    clock += 5000;
+    await r.obj.webSocketMessage(b, JSON.stringify({ type: 'guess', text: word.toUpperCase() }));
+    expect(b.inbox.find(m => m.type === 'you-guessed')).toMatchObject({ first: true, word });
+    expect(c.inbox.at(-1)).toMatchObject({ type: 'guessed', name: 'Sokha' });
+    expect(c.inbox.some(m => m.type === 'chat' && m.text.toLowerCase() === word)).toBe(false); // the answer never leaks into chat
+    await r.obj.webSocketMessage(c, JSON.stringify({ type: 'guess', text: word }));
+    expect(a.inbox.find(m => m.type === 'reveal')).toMatchObject({ i: 0, word });
+
+    // next round: Sokha draws
+    clock += 4500; await r.obj.drawTick(false);
+    expect(roundFor(b)).toMatchObject({ i: 1, artist: 'tg-2', word: r.obj.party.draw.words[1] });
+    expect(roundFor(a)).not.toHaveProperty('word');
+    // an absent artist's round is skipped after a few seconds
+    r.sockets.splice(r.sockets.indexOf(b), 1);
+    clock += 4500; await r.obj.drawTick(false);
+    expect(a.inbox.filter(m => m.type === 'reveal').at(-1)).toMatchObject({ i: 1, skipped: true });
+    // last round runs out of time → results
+    clock += 4500; await r.obj.drawTick(false);
+    clock = r.obj.party.draw.roundEnd + 10; await r.obj.drawTick(false);
+    clock += 4500; await r.obj.drawTick(false);
+    expect(r.obj.party.status).toBe('done');
+    expect(lastText()).toMatch(/🎨 <b>Draw & Guess Party results/);
+    expect(lastText()).toMatch(/🥇 <b>Sokha<\/b> · [\d,]+ pts · guessed 1 drawing/);
+  });
+
   it('ping gets the server time back (for clock sync)', async () => {
     await webhook({ message: { text: '/party reaction', chat: GROUP, from: { id: 1, first_name: 'Dara' } } });
     const r = rooms.get(String(GROUP.id));
@@ -198,7 +255,7 @@ describe('live party', () => {
     await webhook({ message: { text: '/party', chat: GROUP, from: { id: 1, first_name: 'Dara' } } });
     const picker = sent.find(s => s.method === 'sendMessage').body;
     expect(picker.text).toMatch(/Pick a party game/);
-    expect(picker.reply_markup.inline_keyboard.map(row => row[0].callback_data)).toEqual(['party:reaction', 'party:quiz', 'party:snake', 'party:battle']);
+    expect(picker.reply_markup.inline_keyboard.map(row => row[0].callback_data)).toEqual(['party:reaction', 'party:quiz', 'party:draw', 'party:snake', 'party:battle']);
     sent.length = 0;
     await webhook({ callback_query: { id: 'p1', from: { id: 2, first_name: 'Sokha' }, data: 'party:battle', message: { chat: GROUP, message_id: 50 } } });
     expect(sent.find(s => s.method === 'editMessageText').body.text).toMatch(/Sokha<\/b> picked <b>🚀 Ship Battle/);

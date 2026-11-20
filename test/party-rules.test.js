@@ -96,3 +96,12 @@ describe('start now', () => {
     expect(startNow(p, 'a', T).ok).toBe(false);
   });
 });
+
+describe('party secrets', () => {
+  it('the server-only secret is never in what players see', () => {
+    const p = createParty({ id: 'p', chat: -1, seed: 'public-seed', secret: 'server-secret', now: 0 });
+    expect(p.secret).toBe('server-secret');
+    expect(JSON.stringify(publicState(p))).not.toMatch(/server-secret/);
+    expect(publicState(p).seed).toBe('public-seed');
+  });
+});

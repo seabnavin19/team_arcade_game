@@ -4,6 +4,7 @@ import { timelineFor, PARTY_GAMES } from './rules.js';
 import { createBattleView } from './battle-view.js';
 import { createQuizView } from './quiz-view.js';
 import { createSnakeView } from './snake-view.js';
+import { createDrawView } from './draw-view.js';
 import { QUESTIONS } from './quiz.js';
 import { radiusAt, W, H, DURATION } from '../games/reaction.js';
 import { createLoop } from '../core/loop.js';
@@ -35,8 +36,10 @@ export function createPartyApp(root, { api, token, sound, onExit, WebSocketImpl 
         <p class="ta-party-controls" data-controls></p>
       </section>
       <section class="ta-party-game" data-game hidden>
+        <div class="ta-draw-top" data-drawtop hidden></div>
         <div class="ta-canvas-wrap" data-canvaswrap><canvas data-canvas tabindex="0"></canvas><div class="ta-overlay" data-overlay></div></div>
         <div class="ta-quiz" data-quiz hidden></div>
+        <div class="ta-draw-ui" data-drawui hidden></div>
         <div class="ta-dpad" data-dpad hidden>
           <button type="button" data-d="up" aria-label="Up">▲</button>
           <button type="button" data-d="left" aria-label="Left">◀</button>
@@ -49,7 +52,7 @@ export function createPartyApp(root, { api, token, sound, onExit, WebSocketImpl 
       <section class="ta-party-results" data-results hidden></section>
     </div>`;
   const $ = s => root.querySelector(`[data-${s}]`);
-  const el = { dpad: $('dpad'), canvaswrap: $('canvaswrap'), quiz: $('quiz'), startnow: $('startnow'), note: $('note'), title: $('title'), rules: $('rules'), controls: $('controls'), lobby: $('lobby'), count: $('count'), sub: $('sub'), players: $('players'), game: $('game'), canvas: $('canvas'), overlay: $('overlay'), board: $('board'), results: $('results'), sound: $('sound') };
+  const el = { drawtop: $('drawtop'), drawui: $('drawui'), dpad: $('dpad'), canvaswrap: $('canvaswrap'), quiz: $('quiz'), startnow: $('startnow'), note: $('note'), title: $('title'), rules: $('rules'), controls: $('controls'), lobby: $('lobby'), count: $('count'), sub: $('sub'), players: $('players'), game: $('game'), canvas: $('canvas'), overlay: $('overlay'), board: $('board'), results: $('results'), sound: $('sound') };
 
   const renderSound = () => { el.sound.innerHTML = sound.on ? ICONS.sound : ICONS.muted; el.sound.title = sound.on ? 'Sound on' : 'Sound off'; };
   el.sound.addEventListener('click', () => { sound.toggle(); renderSound(); });
@@ -105,6 +108,9 @@ export function createPartyApp(root, { api, token, sound, onExit, WebSocketImpl 
       } else if (m.kind === 'fake' && m.key === me && tg) {
         parts.burst(tg.x, tg.y, C.red, 18); floats.add(tg.x, tg.y - 12, `${m.points}`, C.red); sound.bad();
       }
+    } else if (['round', 'strokes', 'chat', 'guessed', 'you-guessed', 'close-guess', 'reveal'].includes(m.type) && drawView) {
+      if (m.party) setParty(m.party);
+      drawView.onMessage(m);
     } else if (m.type === 'question') { quizView?.onQuestion(m);
     } else if (m.type === 'locked') { quizView?.onLocked(m);
     } else if (m.type === 'answered') { quizView?.onAnswered(m);
@@ -152,11 +158,14 @@ export function createPartyApp(root, { api, token, sound, onExit, WebSocketImpl 
         ? 'Controls: move with the mouse, arrow keys or WASD. On a phone, drag anywhere to steer.'
         : p.game === 'quiz' ? 'Controls: tap an answer, or press 1–4. You get one try per puzzle.'
         : p.game === 'snake' ? 'Controls: arrow keys or WASD. On a phone, swipe on the board or use the arrow buttons.'
+        : p.game === 'draw' ? 'When it’s your turn, draw with your mouse or finger. Otherwise type your guesses. Everyone draws once (up to 5 rounds).'
         : 'Controls: click or tap the targets.';
       el.canvaswrap.hidden = p.game === 'quiz';
       el.quiz.hidden = p.game !== 'quiz';
       if (p.game === 'quiz' && !quizView) quizView = createQuizView(el.quiz, { send, serverNow, getMe: () => me, sound, input });
       if (p.game === 'battle' && !battle) battle = createBattleView({ ctx, input, send, serverNow, getParty: () => party, getMe: () => me, color, sound, parts, floats });
+      el.drawtop.hidden = el.drawui.hidden = p.game !== 'draw';
+      if (p.game === 'draw' && !drawView) drawView = createDrawView({ ctx, top: el.drawtop, ui: el.drawui, input, send, serverNow, getMe: () => me, sound });
       if (p.game === 'snake' && !battle) battle = createSnakeView({ ctx, input, send, serverNow, getParty: () => party, getMe: () => me, color, sound, parts, floats, dpad: el.dpad });
       let touchOnly = false;
       try { touchOnly = !window.matchMedia('(any-pointer: fine)').matches; } catch { /* old browser */ }
@@ -198,6 +207,7 @@ export function createPartyApp(root, { api, token, sound, onExit, WebSocketImpl 
   }
   function detail(pl) {
     if (party.game === 'quiz') return `${fmt(pl.score)} points · ${pl.hits}/${QUESTIONS} right`;
+    if (party.game === 'draw') return `${fmt(pl.score)} points · guessed ${pl.hits} ${pl.hits === 1 ? 'drawing' : 'drawings'}`;
     if (party.game === 'snake') return `${pl.score} points · ${pl.hits || 0} food · ${pl.kos || 0} ${pl.kos === 1 ? 'KO' : 'KOs'} · crashed ${pl.downs || 0}×`;
     return party.game === 'battle'
       ? `${pl.kos || 0} ${pl.kos === 1 ? 'KO' : 'KOs'} · knocked out ${pl.downs || 0}× · ${pl.hits || 0} hits`
@@ -217,6 +227,7 @@ export function createPartyApp(root, { api, token, sound, onExit, WebSocketImpl 
   const input = createInput(el.canvas, { width: W, height: H, captureAllKeys: false });
   let battle = null;
   let quizView = null;
+  let drawView = null;
   input.on('pointerdown', pt => {
     if (party?.status !== 'running' || party.game !== 'reaction') return;
     const t = (serverNow() - party.startAt) / 1000;
@@ -245,6 +256,7 @@ export function createPartyApp(root, { api, token, sound, onExit, WebSocketImpl 
       parts.update(dt); floats.update(dt);
       if (battle && party?.status === 'running') battle.update(dt);
       if (quizView && party?.status === 'running') quizView.update();
+      if (drawView && party?.status === 'running') drawView.update();
       if (party?.status === 'lobby') {
         const left = Math.max(0, Math.ceil((party.startAt - serverNow()) / 1000));
         el.count.textContent = left > 0 ? `${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}` : 'GO!';
@@ -255,6 +267,7 @@ export function createPartyApp(root, { api, token, sound, onExit, WebSocketImpl 
       if (party?.status !== 'running') return;
       if (party.game === 'battle' || party.game === 'snake') { battle?.render(); return; }
       if (party.game === 'quiz') return;
+      if (party.game === 'draw') { drawView?.render(); return; }
       const t = (serverNow() - party.startAt) / 1000;
       ctx.fillStyle = C.bg; ctx.fillRect(0, 0, W, H);
       ctx.strokeStyle = 'rgba(141,136,179,0.07)'; ctx.lineWidth = 1;

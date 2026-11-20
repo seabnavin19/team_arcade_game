@@ -42,7 +42,7 @@ Telegram group ──/arcade, Play──▶ Cloudflare Worker (telegram/worker.j
 
 ### 🎉 Live party (multiplayer)
 
-Send **`/party`** in the group and pick a game from the buttons, or go straight to one with **`/party battle`**, **`/party snake`**, **`/party iq`** or **`/party reaction`**.
+Send **`/party`** in the group and pick a game from the buttons, or go straight to one with **`/party draw`**, **`/party battle`**, **`/party snake`**, **`/party iq`** or **`/party reaction`**.
 The bot posts a card with a **Join the party** button and a 60-second countdown. A party needs at least 2 players, and one party runs per group at a time.
 As soon as 2 players are in, anyone in the lobby can tap **▶ Start now**. Everyone then gets a 3-second countdown instead of waiting out the full minute.
 
@@ -52,6 +52,15 @@ As soon as 2 players are in, anyone in the lobby can tap **▶ Start now**. Ever
 - Pickups appear every 12 seconds: **+** refills your shields, **R** gives 6 seconds of rapid fire.
 - **Most KOs wins.** Ties go to whoever was knocked out fewer times.
 - Controls: mouse (the ship flies toward the cursor), arrow keys / WASD, or drag anywhere on a phone.
+
+**🎨 Draw & Guess** (one round per player, up to 5 rounds of 50 seconds; 2–12 players)
+- Players take turns as the artist. Only the artist sees the secret word (cat, coffee, tuk tuk…) and draws it, and everyone sees the drawing appear live.
+- Everyone else types guesses. Wrong guesses show in the chat for laughs. Near misses ("elefant") show only to the person who typed them, as "very close!".
+  Halfway through, one letter is revealed as a hint.
+- A right guess scores 100 plus up to 200 for speed, plus 50 for the first correct guess. The artist gets +60 for every player who guesses it.
+  The round ends early once everyone has it.
+- Artist tools: 9 colours, an eraser, 3 brush sizes, Undo and Clear. Works with a mouse or a finger.
+- Words are picked on the server from a secret only the server knows, so nobody can look them up. Edit the list in `src/party/draw.js`.
 
 **🐍 Snake Arena** (90 seconds, 2–8 players)
 - Everyone's snake moves in one grid arena, 8 steps a second.
@@ -160,7 +169,7 @@ To update the games, upload a new `arcade.js` with the same name. Players get it
 
 ```bash
 npm install
-npm test                       # 108 automated tests: game rules, saving and conflicts, ranking, the Telegram server, live parties
+npm test                       # 116 automated tests: game rules, saving and conflicts, ranking, the Telegram server, live parties
 npm run build                  # dist/ (Confluence) and site/ (Telegram / GitHub Pages)
 
 node dev/local-telegram.mjs    # Telegram version with a pretend Telegram + GitHub → http://localhost:8787/play?name=Dara

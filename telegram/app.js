@@ -192,7 +192,7 @@ export function createHandler({ fetch: fetchImpl = (...a) => fetch(...a), now = 
         if (msg.chat.type === 'private') return reply('Parties are for groups: add me to your team group and send /party there.');
         if (!c.env.PARTY) return reply('Live parties are not switched on for this server yet.');
         const arg = (msg.text.split(/\s+/)[1] || '').toLowerCase();
-        const ALIASES = { iq: 'quiz', brain: 'quiz', ship: 'battle', ships: 'battle', tap: 'reaction', snakes: 'snake' };
+        const ALIASES = { iq: 'quiz', brain: 'quiz', ship: 'battle', ships: 'battle', tap: 'reaction', snakes: 'snake', guess: 'draw', drawing: 'draw' };
         const pick = ALIASES[arg] || Object.keys(PARTY_GAMES).find(g => g === arg || (arg && PARTY_GAMES[g].title.toLowerCase().startsWith(arg)));
         if (pick) return startParty(c, msg.chat, pick, msg.message_thread_id);
         return reply('🎉 <b>Pick a party game:</b>', { reply_markup: { inline_keyboard: Object.entries(PARTY_GAMES).map(([id, g]) => [{ text: `${g.emoji} ${g.title}`, callback_data: `party:${id}` }]) } });
@@ -214,7 +214,7 @@ export function createHandler({ fetch: fetchImpl = (...a) => fetch(...a), now = 
           'Four quick games for your break: 🚀 Drone Shooter, ⚡ Reaction Tap, 🧠 Memory Match and ⌨️ Typing Race.',
           '',
           '/arcade: post the game, then tap <b>Play</b>',
-          '/party: live multiplayer round: ⚡ Reaction Tap, 💡 Brain Race, 🐍 Snake Arena or 🚀 Ship Battle',
+          '/party: live multiplayer round: ⚡ Reaction Tap, 💡 Brain Race, 🎨 Draw & Guess, 🐍 Snake Arena or 🚀 Ship Battle',
           '/board: this week\'s leaderboards and champion',
           '/lastweek: last week\'s results',
           '',
@@ -297,7 +297,7 @@ export function createHandler({ fetch: fetchImpl = (...a) => fetch(...a), now = 
     steps.webhook = hook.ok ? `${origin}/telegram` : hook.description;
     const cmds = await c.tg('setMyCommands', { commands: [
       { command: 'arcade', description: 'Post Team Arcade, then tap Play' },
-      { command: 'party', description: 'Live party: Reaction Tap, Brain Race, Snake or Ship Battle' },
+      { command: 'party', description: 'Live party: Reaction, Brain Race, Draw & Guess, Snake, Ships' },
       { command: 'board', description: "This week's leaderboards" },
       { command: 'lastweek', description: "Last week's results" },
       { command: 'help', description: 'How it works' },
