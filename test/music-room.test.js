@@ -297,3 +297,14 @@ describe('music bot', () => {
     expect(bad.status).toBe(401);
   });
 });
+
+describe('music room announcements', () => {
+  it('announces a song once even when two links are added at the same moment', async () => {
+    env.MUSIC_ANNOUNCE = 'now-playing';
+    const r = makeRoom();
+    await r.http('/set-card', { chat: -100, messageId: 5 });
+    const a = await r.join('tg-1', 'Dara'), b = await r.join('tg-2', 'Sokha');
+    await Promise.all([r.say(a, { type: 'add', url: LINK(SONG_A) }), r.say(b, { type: 'add', url: LINK(SONG_B) })]);
+    expect(sent.filter(s => s.method === 'sendMessage')).toHaveLength(1);
+  });
+});

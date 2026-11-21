@@ -121,7 +121,8 @@ export class MusicRoom {
     let msg;
     try { msg = JSON.parse(typeof raw === 'string' ? raw : new TextDecoder().decode(raw)); } catch { return; }
     const me = ws.deserializeAttachment() || {};
-    const m = this.music, now = this.now(), prev = m.now?.id;
+    const m = this.music, now = this.now();
+    let prev = m.now?.id; // what was playing before this message (re-read after any await)
     const notice = text => ws.send(JSON.stringify({ type: 'notice', text }));
     const keys = () => this.listeners().map(l => l.key);
 
@@ -132,6 +133,7 @@ export class MusicRoom {
         if (!videoId) return notice(MESSAGES.notLink);
         const title = await this.lookupTitle(videoId);
         if (title == null) return notice(MESSAGES.blocked);
+        prev = this.music.now?.id; // the song may have changed during the lookup
         const entry = { id: crypto.randomUUID().slice(0, 8), videoId, title, seconds: null, addedBy: { key: me.key, name: me.name } };
         const r = addSong(this.music, entry, this.now());
         if (!r.ok) return notice(r.reason);
