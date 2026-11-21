@@ -234,3 +234,15 @@ describe('stale skips', () => {
     expect(m.votes).toEqual([]);
   });
 });
+
+import { playerEntryId } from '../src/music/rules.js';
+
+describe('player reports', () => {
+  it('names the song the player loaded, only while the player still shows that video', () => {
+    const loaded = { id: 'e-old', videoId: 'aaaaaaaaaaa' };
+    expect(playerEntryId(loaded, 'aaaaaaaaaaa')).toBe('e-old');
+    expect(playerEntryId(loaded, 'bbbbbbbbbbb')).toBeNull(); // a late event from another video
+    expect(playerEntryId(null, 'aaaaaaaaaaa')).toBeNull();
+    expect(playerEntryId(loaded, undefined)).toBe('e-old'); // player can't say: trust what we loaded
+  });
+});

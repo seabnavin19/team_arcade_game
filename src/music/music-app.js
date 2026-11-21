@@ -6,7 +6,7 @@
 // messages and player events, never from timers (browsers slow those down
 // in hidden tabs).
 
-import { driftSeek, neededVotes } from './rules.js';
+import { driftSeek, neededVotes, playerEntryId } from './rules.js';
 
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const clock = s => { s = Math.max(0, Math.floor(s || 0)); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; };
@@ -113,8 +113,11 @@ export function createMusicApp(root, { api, token, onExit, WebSocketImpl = globa
         playerVars: { controls: 0, playsinline: 1, rel: 0, modestbranding: 1, disablekb: 1 },
         events: {
           onReady: () => { playerReady = true; sync(); },
+          // Events are about the video this player loaded, which may not be the
+          // room's current song any more (events arrive late), so label them by
+          // what was loaded and drop ones from another video.
           onStateChange: e => {
-            const id = music?.now?.id;
+            const id = playerEntryId(loadedEntry, player.getVideoData?.()?.video_id);
             if (e.data === YT_PLAYING && id && durationSent !== id) {
               const d = player.getDuration();
               if (d > 0) { durationSent = id; send({ type: 'duration', id, seconds: Math.round(d) }); }
@@ -122,7 +125,10 @@ export function createMusicApp(root, { api, token, onExit, WebSocketImpl = globa
             if (e.data === YT_PLAYING && music?.paused) player.pauseVideo();
             if (e.data === YT_ENDED && id) send({ type: 'ended', id });
           },
-          onError: e => { if (music?.now) send({ type: 'unplayable', id: music.now.id, code: e.data }); },
+          onError: e => {
+            const id = playerEntryId(loadedEntry, player.getVideoData?.()?.video_id);
+            if (id) send({ type: 'unplayable', id, code: e.data });
+          },
         },
       });
     }).catch(() => { el.unlock.hidden = false; unlocked = false; note("Couldn't load YouTube. Check your connection and tap again."); });
@@ -134,8 +140,8 @@ export function createMusicApp(root, { api, token, onExit, WebSocketImpl = globa
     const now = music?.now;
     if (!now) { if (loadedEntry) { player.stopVideo(); loadedEntry = null; } return; }
     const at = target();
-    if (loadedEntry !== now.id) {
-      loadedEntry = now.id;
+    if (loadedEntry?.id !== now.id) {
+      loadedEntry = { id: now.id, videoId: now.videoId };
       if (music.paused) player.cueVideoById({ videoId: now.videoId, startSeconds: at });
       else player.loadVideoById({ videoId: now.videoId, startSeconds: at });
       return;

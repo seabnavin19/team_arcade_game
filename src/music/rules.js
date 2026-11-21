@@ -174,3 +174,14 @@ export const publicMusic = (m, nowMs) => ({
 
 /** Client: is the player far enough from the shared position to jump? */
 export const driftSeek = (playerSeconds, targetSeconds) => Math.abs(playerSeconds - targetSeconds) > 1.5;
+
+/**
+ * Client: which song a player event (playing, ended, error) is about. Uses the
+ * song this player loaded, not the room's current one, and drops events from a
+ * different video (a late event from the previous song).
+ */
+export function playerEntryId(loaded, playerVideoId) {
+  if (!loaded) return null;
+  if (playerVideoId && playerVideoId !== loaded.videoId) return null;
+  return loaded.id;
+}
