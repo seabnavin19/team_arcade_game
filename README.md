@@ -38,14 +38,21 @@ Telegram group ──/arcade, Play──▶ Cloudflare Worker (telegram/worker.j
 - **The Worker** is the only part holding the bot token and the GitHub token. It checks each run (who played, how long it took, whether the score is possible) before saving.
 - **Group messages:** the bot posts when someone takes #1 or enters the top 3 of a game, and every Monday at 08:30 it posts last week's results.
 
-**Bot commands:** `/arcade` posts the game with a Play button, `/party` starts a live party round (below), `/music` opens the music room (below), `/board` shows this week's leaderboards, `/lastweek` shows last week's results, and `/help` explains the bot.
-**Bot commands:** `/arcade` posts the game with a Play button, `/party` starts a live party round (below), `/duo` starts a game for two (Duo Mode, below), `/board` shows this week's leaderboards, `/lastweek` shows last week's results, and `/help` explains the bot.
+**Bot commands:** `/arcade` posts the game with a Play button, `/party` starts a live party round (below), `/duo` starts a game for two (Duo Mode, below), `/music` opens the music room (below), `/board` shows this week's leaderboards, `/lastweek` shows last week's results, and `/help` explains the bot.
 
 ### 🎉 Live party (multiplayer)
 
-Send **`/party`** in the group and pick a game from the buttons, or go straight to one with **`/party draw`**, **`/party battle`**, **`/party snake`**, **`/party iq`** or **`/party reaction`**.
+Send **`/party`** in the group and pick a game from the buttons, or go straight to one with **`/party boat`**, **`/party draw`**, **`/party battle`**, **`/party snake`**, **`/party iq`** or **`/party reaction`**.
 The bot posts a card with a **Join the party** button and a 60-second countdown. A party needs at least 2 players, and one party runs per group at a time.
 As soon as 2 players are in, anyone in the lobby can tap **▶ Start now**. Everyone then gets a 3-second countdown instead of waiting out the full minute.
+
+**🚣 Water Festival Boat Race** (up to 90 seconds, 2–16 players)
+- A Bon Om Touk dragon-boat race on the Tonle Sap, finishing at the Royal Palace.
+- A drum beats; tap **Paddle** as the ring closes. Perfect strokes push hardest, off-beat strokes barely move you.
+- With fewer than 4 players everyone races their own boat. From 4 players you race in crews (Naga, Hanuman, Garuda, Apsara): pick one in the lobby or get placed in the smallest. When the whole crew strokes on the same beat, the boat gets a sync boost.
+- The drum speeds up on the final stretch. Boats far behind get a small catch-up boost, so races stay close.
+- The bot posts the places, the winning crew, the best paddler and the best-synced crew.
+- Controls: tap Paddle, tap the river, or press Space.
 
 **🚀 Ship Battle** (90 seconds, 2–8 players)
 - Everyone flies a ship in one arena with cover blocks. Your ship **fires forward on its own**, so you aim by steering.
@@ -184,6 +191,7 @@ If the last step says it was skipped, open this address once in a browser:
 | Brain Race: number of puzzles, time per puzzle, puzzle types | top of `src/party/quiz.js` |
 | Ship Battle balance (speed, fire rate, shields, pickups) | top of `src/party/battle.js` |
 | Snake Arena (speed, board size, points, respawn) | top of `src/party/snake.js` |
+| Boat Race (drum speed, timing windows, sync boost, catch-up, crews) | top of `src/party/boat.js` |
 | In Sync: questions, rounds, time per round, points | top of `src/party/sync.js` |
 | Night Market Duo: dishes, cook times, burners, customers, tips | top of `src/party/market.js` |
 | Time of the Monday results post | `crons` in `telegram/wrangler.toml` (UTC) |
@@ -216,8 +224,7 @@ To update the games, upload a new `arcade.js` with the same name. Players get it
 
 ```bash
 npm install
-npm test                       # 169 automated tests: game rules, saving and conflicts, ranking, the Telegram server, live parties, the music room
-npm test                       # 133 automated tests: game rules, saving and conflicts, ranking, the Telegram server, live parties, Duo Mode
+npm test                       # 202 automated tests: game rules, saving and conflicts, ranking, the Telegram server, live parties, Duo Mode, the music room
 npm run build                  # dist/ (Confluence) and site/ (Telegram / GitHub Pages)
 
 node dev/local-telegram.mjs    # Telegram version with a pretend Telegram + GitHub → http://localhost:8787/play?name=Dara
@@ -231,10 +238,8 @@ src/core/       shared: seeded randomness, weeks, ranking, saving, input, sound
 src/games/      the four games (+ meta.js: names, formats and score limits shared with the server)
 src/ui/         the arcade hub and styles
 src/main.js            Confluence entry      src/telegram-main.js   Telegram entry
-src/party/      live party rules and screen
+src/party/      live party and Duo Mode rules and screens
 src/music/      music room rules and screen
 telegram/       Cloudflare Worker: bot, signed links, GitHub JSON storage, Monday results, party rooms, music rooms
-src/party/      live party and Duo Mode rules and screens
-telegram/       Cloudflare Worker: bot, signed links, GitHub JSON storage, Monday results, party rooms
 web/            GitHub Pages page + game cover image
 ```

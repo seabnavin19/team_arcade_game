@@ -8,6 +8,8 @@ import { createDrawView } from './draw-view.js';
 import { QUESTIONS } from './quiz.js';
 import { createSyncView } from './sync-view.js';
 import { createMarketView } from './market-view.js';
+import { createBoatView, crewLobbyHtml } from './boat-view.js';
+import { assignCrews } from './boat.js';
 import { ROUNDS as SYNC_ROUNDS } from './sync.js';
 import { radiusAt, W, H, DURATION } from '../games/reaction.js';
 import { createLoop } from '../core/loop.js';
@@ -33,6 +35,7 @@ export function createPartyApp(root, { api, token, sound, onExit, WebSocketImpl 
         <div class="ta-party-count" data-count>…</div>
         <div class="ta-party-sub" data-sub>Connecting…</div>
         <ul class="ta-party-players" data-players></ul>
+        <div data-crews></div>
         <button class="ta-btn ta-party-start" type="button" data-startnow hidden>▶ Start now</button>
         <div class="ta-party-note" data-note></div>
         <p class="ta-party-rules" data-rules></p>
@@ -41,6 +44,7 @@ export function createPartyApp(root, { api, token, sound, onExit, WebSocketImpl 
       <section class="ta-party-game" data-game hidden>
         <div class="ta-draw-top" data-drawtop hidden></div>
         <div class="ta-canvas-wrap" data-canvaswrap><canvas data-canvas tabindex="0"></canvas><div class="ta-overlay" data-overlay></div></div>
+        <div class="ta-boat" data-boat hidden></div>
         <div class="ta-quiz" data-quiz hidden></div>
         <div class="ta-quiz ta-duo" data-duo hidden></div>
         <div class="ta-draw-ui" data-drawui hidden></div>
@@ -56,10 +60,11 @@ export function createPartyApp(root, { api, token, sound, onExit, WebSocketImpl 
       <section class="ta-party-results" data-results hidden></section>
     </div>`;
   const $ = s => root.querySelector(`[data-${s}]`);
-  const el = { mode: $('mode'), duo: $('duo'), drawtop: $('drawtop'), drawui: $('drawui'), dpad: $('dpad'), canvaswrap: $('canvaswrap'), quiz: $('quiz'), startnow: $('startnow'), note: $('note'), title: $('title'), rules: $('rules'), controls: $('controls'), lobby: $('lobby'), count: $('count'), sub: $('sub'), players: $('players'), game: $('game'), canvas: $('canvas'), overlay: $('overlay'), board: $('board'), results: $('results'), sound: $('sound') };
+  const el = { boat: $('boat'), crews: $('crews'), mode: $('mode'), duo: $('duo'), drawtop: $('drawtop'), drawui: $('drawui'), dpad: $('dpad'), canvaswrap: $('canvaswrap'), quiz: $('quiz'), startnow: $('startnow'), note: $('note'), title: $('title'), rules: $('rules'), controls: $('controls'), lobby: $('lobby'), count: $('count'), sub: $('sub'), players: $('players'), game: $('game'), canvas: $('canvas'), overlay: $('overlay'), board: $('board'), results: $('results'), sound: $('sound') };
 
   const renderSound = () => { el.sound.innerHTML = sound.on ? ICONS.sound : ICONS.muted; el.sound.title = sound.on ? 'Sound on' : 'Sound off'; };
   el.sound.addEventListener('click', () => { sound.toggle(); renderSound(); });
+  el.crews.addEventListener('click', e => { const b = e.target.closest('[data-crew]'); if (b) send({ type: 'crew', c: Number(b.dataset.crew) }); });
   el.startnow.addEventListener('click', () => { el.startnow.disabled = true; send({ type: 'start-now' }); });
   renderSound();
 
@@ -125,7 +130,9 @@ export function createPartyApp(root, { api, token, sound, onExit, WebSocketImpl 
     } else if (m.type === 'reveal') { setParty(m.party); quizView?.onReveal(m);
     } else if (m.type === 'notice') {
       el.note.textContent = m.text; el.startnow.disabled = false;
+    } else if (m.type === 'paddle-result') { boatView?.onResult(m);
     } else if (m.type === 'snap') {
+      if (boatView) { boatView.onSnap(m); return; }
       if (marketView) { marketView.onSnap(m); if (party) party.players.forEach(pl => { pl.score = m.tips; }); if (performance.now() - lastBoard > 400) { lastBoard = performance.now(); render(); } return; }
       battle?.onSnap(m);
       liveBattleScores(m);
@@ -180,12 +187,16 @@ export function createPartyApp(root, { api, token, sound, onExit, WebSocketImpl 
         : p.game === 'snake' ? 'Controls: arrow keys or WASD. On a phone, swipe on the board or use the arrow buttons.'
         : p.game === 'draw' ? 'When it’s your turn, draw with your mouse or finger. Otherwise type your guesses. 3 rounds, and players take turns drawing.'
         : p.game === 'sync' ? 'Controls: tap an answer, or press 1–4. Your partner can’t see your pick until the reveal.'
+        : p.game === 'boat' ? 'Controls: tap Paddle (or the river, or press Space) on each drum beat. Watch the shrinking ring: tap when it closes.'
         : p.game === 'market' ? 'Cook: tap a dish (or press 1–3) to start it, then tap it when it’s ready. Server: tap a customer to hand them their dish.'
         : 'Controls: click or tap the targets.';
       el.canvaswrap.hidden = p.game === 'quiz' || !!g.duo;
       el.quiz.hidden = p.game !== 'quiz';
       el.duo.hidden = !g.duo;
       if (p.game === 'sync' && !syncView) syncView = createSyncView(el.duo, { send, serverNow, getMe: () => me, getParty: () => party, sound, input });
+      el.boat.hidden = p.game !== 'boat';
+      el.board.hidden = p.game === 'boat';
+      if (p.game === 'boat' && !boatView) boatView = createBoatView({ ctx, panel: el.boat, input, send, serverNow, getParty: () => party, getMe: () => me, sound, parts, floats });
       if (p.game === 'market' && !marketView) marketView = createMarketView(el.duo, { send, serverNow, getMe: () => me, getParty: () => party, sound });
       if (p.game === 'quiz' && !quizView) quizView = createQuizView(el.quiz, { send, serverNow, getMe: () => me, sound, input });
       if (p.game === 'battle' && !battle) battle = createBattleView({ ctx, input, send, serverNow, getParty: () => party, getMe: () => me, color, sound, parts, floats });
@@ -213,6 +224,7 @@ export function createPartyApp(root, { api, token, sound, onExit, WebSocketImpl 
       el.players.innerHTML = list || '<li class="ta-muted">Nobody yet…</li>';
       const n = party.players.length;
       const inLobby = party.status === 'lobby';
+      el.crews.innerHTML = party.game === 'boat' && inLobby ? crewLobbyHtml(party, me, assignCrews) : '';
       const startingSoon = inLobby && party.startedBy;
       el.sub.textContent = party.duo ? `${n} of 2 players in · one team, one score` : `${n} ${n === 1 ? 'player' : 'players'} in · needs at least 2`;
       el.startnow.hidden = !(inLobby && !startingSoon && n >= 2 && party.players.some(p => p.key === me));
@@ -240,6 +252,18 @@ export function createPartyApp(root, { api, token, sound, onExit, WebSocketImpl 
         ? `${s.matches || 0} of ${SYNC_ROUNDS} matched · ${fmt(sc)} points${s.best >= 3 ? ` · best streak ${s.best}` : ''}`
         : `${s.served || 0} served · ${s.walked || 0} walked out · ${s.burned || 0} burned`;
       showResults(`<div class="ta-result-label">${label}</div><div class="ta-result-score">${big}</div><div class="ta-result-meta">${names}</div><p class="ta-result-status">${meta}</p><p class="ta-muted">The week’s top duos are in the group. Send <b>/duo board</b> to see them.</p>`);
+    } else if (status === 'done' && party.game === 'boat') {
+      const s = party.summary || { boats: [] };
+      const myName = party.players.find(p => p.key === me)?.name;
+      const myBoat = s.boats.find(b => (s.mode === 'crews' ? b.members.includes(myName) : b.name === myName));
+      const time = b => (b.ms ? `${(b.ms / 1000).toFixed(1)} s` : `${Math.round(b.x / 10)}%`);
+      showResults(`
+        <div class="ta-result-label">${s.boats[0] ? `${esc(s.boats[0].name)} ${s.mode === 'crews' ? 'crew wins' : 'wins'}` : 'Race over'}</div>
+        <div class="ta-result-score">${myBoat ? (MEDALS[myBoat.place - 1] || `#${myBoat.place}`) : '🚣'}</div>
+        <div class="ta-result-meta">${myBoat ? `${s.mode === 'crews' ? `Your crew ${esc(myBoat.name)}` : 'You'} finished ${myBoat.place === 1 ? 'first' : `#${myBoat.place}`}${myBoat.ms ? ` in ${time(myBoat)}` : ''}` : ''}</div>
+        <ol class="ta-party-final">${s.boats.map(b => `<li class="${b === myBoat ? 'is-me' : ''}"><span>${MEDALS[b.place - 1] || `${b.place}.`}</span><span class="ta-name">${esc(b.name)}${s.mode === 'crews' ? ` <small class="ta-muted">${esc(b.members.join(', '))}</small>` : ''}</span><span class="ta-score">${time(b)}</span></li>`).join('')}</ol>
+        ${s.best ? `<p class="ta-result-status">🏅 Best paddler: <b>${esc(s.best.name)}</b>, ${s.best.pct}% on the beat</p>` : ''}
+        ${s.sync ? `<p class="ta-result-status">🥁 Best sync: <b>${esc(s.sync.name)}</b>, ${s.sync.streak} strokes together</p>` : ''}`);
     } else if (status === 'done') {
       const mine = party.players.find(p => p.key === me);
       showResults(`
@@ -269,6 +293,7 @@ export function createPartyApp(root, { api, token, sound, onExit, WebSocketImpl 
   const input = createInput(el.canvas, { width: W, height: H, captureAllKeys: false });
   let battle = null;
   let quizView = null;
+  let boatView = null;
   let drawView = null;
   let syncView = null;
   let marketView = null;
@@ -312,6 +337,7 @@ export function createPartyApp(root, { api, token, sound, onExit, WebSocketImpl 
     render() {
       if (party?.status !== 'running') return;
       if (party.game === 'battle' || party.game === 'snake') { battle?.render(); return; }
+      if (party.game === 'boat') { boatView?.render(); return; }
       if (party.game === 'quiz' || party.duo) return;
       if (party.game === 'draw') { drawView?.render(); return; }
       const t = (serverNow() - party.startAt) / 1000;

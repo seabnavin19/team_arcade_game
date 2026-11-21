@@ -7,6 +7,7 @@ import { buildTimeline, scoreHit, FAKE_PENALTY, MISS_PENALTY, DURATION } from '.
 import { QUIZ_SECONDS } from './quiz.js';
 import { SYNC_SECONDS } from './sync.js';
 import { DURATION as MARKET_SECONDS } from './market.js';
+import { MAX_SECONDS as RACE_SECONDS, MAX_PLAYERS as RACE_MAX } from './boat.js';
 
 export const JOIN_SECONDS = 60;      // lobby length after /party
 export const MIN_PLAYERS = 2;        // fewer than this → cancelled
@@ -18,6 +19,8 @@ export const PARTY_GAMES = {
     pitch: 'Everyone gets the same targets at the same moment. The fastest tap takes the points. Red ones are traps!' },
   quiz: { title: 'Brain Race', emoji: '💡', seconds: QUIZ_SECONDS, maxPlayers: 50,
     pitch: '8 quick IQ puzzles: number patterns, maths, time and logic. Everyone gets the same puzzle at the same moment. Right answers score more the faster you are, plus a bonus for the first correct answer. One try per puzzle!' },
+  boat: { title: 'Water Festival Boat Race', emoji: '🚣', seconds: RACE_SECONDS, maxPlayers: RACE_MAX,
+    pitch: 'A Bon Om Touk dragon boat race on the Tonle Sap. Tap Paddle on the drum beat: on-beat strokes push your boat, and a crew that strokes together gets a sync boost. With 4 or more players you race in crews; with fewer, everyone races solo. First past the Royal Palace wins!' },
   draw: { title: 'Draw & Guess', emoji: '🎨', seconds: 300, maxPlayers: 12,
     pitch: '3 rounds. Take turns drawing a secret word while everyone else guesses. Quick correct guesses score more, and the artist scores for every player who gets it.' },
   snake: { title: 'Snake Arena', emoji: '🐍', seconds: 90, maxPlayers: 8,
@@ -125,5 +128,5 @@ export function results(p) {
 /** What clients are allowed to see. */
 export const publicState = p => p && ({
   id: p.id, game: p.game || 'reaction', duo: isDuo(p), summary: p.summary || null, status: p.status, seed: p.seed, startAt: p.startAt, endAt: p.endAt, claimed: p.claimed, startedBy: p.startedBy || null,
-  players: results(p).map(({ key, name, score, hits, fakes, kos, downs, place }) => ({ key, name, score, hits, fakes, kos, downs, place })),
+  players: results(p).map(({ key, name, score, hits, fakes, kos, downs, place, crew }) => ({ key, name, score, hits, fakes, kos, downs, place, crew })),
 });

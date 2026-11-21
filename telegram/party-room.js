@@ -13,7 +13,12 @@ import { createMarket, addCook, act as marketAct, step as stepMarket, snapshot a
 import { weekKey } from '../src/core/time.js';
 
 // Real-time party games the room simulates itself, and how.
+import { createRace, addRower, paddle, step as stepRace, snapshot as raceSnapshot, raceStats, raceSummary, isOver as raceOver, TICK_MS as RACE_TICK_MS, CREWS } from '../src/party/boat.js';
+
 const LIVE = {
+  boat: { tickMs: RACE_TICK_MS, types: ['paddle'], create: createRace, add: addRower, step: stepRace, snapshot: raceSnapshot, stats: raceStats,
+    summary: raceSummary, isOver: raceOver,
+    input: (sim, key, msg, now) => { const r = paddle(sim, key, Number(msg.t), now); return r && { type: 'paddle-result', q: r.q }; } },
   battle: { tickMs: 50, types: ['input'], create: createBattle, add: addShip, step: sim => stepBattle(sim, 0.05), snapshot: battleSnapshot, stats: battleStats,
     input: (sim, key, msg) => { if (msg.type === 'input') setInput(sim, key, Number(msg.mx), Number(msg.my)); } },
   snake: { tickMs: SNAKE_TICK_MS, types: ['dir'], create: createSnakeGame, add: addSnake, step: stepSnake, snapshot: snakeSnapshot, stats: snakeStats,
@@ -137,7 +142,10 @@ export class PartyRoom {
     if (msg.type === 'ping') { ws.send(JSON.stringify({ type: 'pong', c: msg.c, s: this.now() })); return; }
     if (!p) return;
     if (LIVE[p.game]?.types.includes(msg.type)) {
-      if (p.status === 'running' && this.ensureBattle()) LIVE[p.game].input(this.battle, me.key, msg);
+      if (p.status === 'running' && this.ensureBattle()) {
+        const reply = LIVE[p.game].input(this.battle, me.key, msg, this.now());
+        if (reply) ws.send(JSON.stringify(reply));
+      }
       return;
     }
     if (msg.type === 'pick') {
@@ -196,6 +204,11 @@ export class PartyRoom {
       this.broadcast({ type: 'answered', i: msg.i, count: answered, of: Object.keys(p.players).length });
       return;
     }
+    if (msg.type === 'crew' && p.game === 'boat' && p.status === 'lobby' && p.players[me.key]) {
+      const c = Number(msg.c);
+      if (Number.isInteger(c) && c >= 0 && c < CREWS.length) { p.players[me.key].crew = c; await this.save(); this.broadcast(this.stateMsg()); }
+      return;
+    }
     if (msg.type === 'start-now') {
       const r = startNow(p, me.key, this.now());
       if (!r.ok) { ws.send(JSON.stringify({ type: 'notice', text: r.reason })); return; }
@@ -229,7 +242,7 @@ export class PartyRoom {
     const live = p && LIVE[p.game];
     if (!live || p.status !== 'running') return false;
     // (Re)build the arena; after a restart everyone respawns but keeps their score.
-    this.battle = live.create(p.seed);
+    this.battle = live.create(p.seed, p);
     for (const [key, pl] of Object.entries(p.players)) {
       const unit = live.add(this.battle, key, pl.name);
       if (unit) Object.assign(unit, { score: pl.score || 0, kos: pl.kos || 0, downs: pl.downs || 0, hits: pl.hits || 0, ...(p.game === 'snake' ? { food: pl.hits || 0 } : {}) });
@@ -239,8 +252,9 @@ export class PartyRoom {
     const every2s = Math.round(2000 / live.tickMs);
     this.ticker = setInterval(() => {
       if (!this.battle) return;
-      live.step(this.battle);
+      live.step(this.battle, this.now());
       this.broadcast({ type: 'snap', t: this.now(), ...live.snapshot(this.battle) });
+      if (live.isOver?.(this.battle)) { this.finishParty().catch(e => console.log('finish', e.message)); return; }
       if (++n % every2s === 0) { this.copyBattleStats(); this.save(); } // keep scores safe
     }, live.tickMs);
     return true;
@@ -452,6 +466,7 @@ export class PartyRoom {
       }
       await this.save();
       this.broadcast(this.stateMsg());
+      if (p.game === 'boat') { await this.postRaceResults(p); return; }
       const g = PARTY_GAMES[p.game || 'reaction'];
       const detail = r => (p.game === 'battle'
         ? `${r.kos} ${r.kos === 1 ? 'KO' : 'KOs'} · knocked out ${r.downs}×`
@@ -470,6 +485,24 @@ export class PartyRoom {
     }
   }
 }
+
+// Water Festival race results: boats in finishing order, best paddler, best sync.
+PartyRoom.prototype.postRaceResults = async function postRaceResults(p) {
+  const s = p.summary || { boats: [] };
+  const time = b => (b.ms ? `${(b.ms / 1000).toFixed(1)} s` : `${Math.round(b.x / 10)}% of the course`);
+  const lines = s.boats.map(b => `${MEDALS[b.place - 1] || `${b.place}.`} <b>${esc(b.name)}</b>${s.mode === 'crews' ? ` (${esc(b.members.join(', '))})` : ''} · ${time(b)}`);
+  const win = s.boats[0];
+  await this.tg('sendMessage', {
+    chat_id: p.chat, parse_mode: 'HTML',
+    text: [
+      `🚣 <b>Water Festival Boat Race</b> · ${Object.keys(p.players).length} paddlers`, '', ...lines, '',
+      win ? `🎉 <b>${esc(win.name)}</b> ${s.mode === 'crews' ? 'crew wins' : 'wins'} the race!` : '',
+      s.best ? `🏅 Best paddler: <b>${esc(s.best.name)}</b>, ${s.best.pct}% on the beat` : '',
+      s.sync ? `🥁 Best sync: <b>${esc(s.sync.name)}</b>, ${s.sync.streak} perfect strokes together` : '',
+      'Rematch? Send /party',
+    ].filter(Boolean).join('\n'),
+  });
+};
 
 // Duo results: one team, one score, plus the week's best duos.
 PartyRoom.prototype.postDuoResults = async function postDuoResults(p) {

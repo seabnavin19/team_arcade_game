@@ -240,6 +240,7 @@ body.ta-fullpage #team-arcade .ta { max-width: 1040px; margin: 0 auto; border: 0
 #team-arcade .ta-music-listeners { margin-top: 18px; color: var(--muted); font-size: 13px; }
 @media (max-width: 700px) {
   #team-arcade .ta-music-stage { grid-template-columns: 1fr; }
+}
 /* Duo Mode: In Sync */
 #team-arcade .ta-duo[hidden] { display: none; }
 #team-arcade .ta-sync-about { text-align: center; color: var(--muted); font-size: 14px; margin-bottom: 8px; }
@@ -309,3 +310,26 @@ body.ta-fullpage #team-arcade .ta { max-width: 1040px; margin: 0 auto; border: 0
   #team-arcade .ta .ta-sync-q { font-size: 19px; }
   #team-arcade .ta .ta-sync-opt { font-size: 15px; }
 }
+
+/* Water Festival Boat Race */
+#team-arcade .ta-boat[hidden] { display: none; }
+#team-arcade .ta-boat { max-width: 960px; margin: 12px auto 0; }
+#team-arcade .ta-boat-drum { display: flex; align-items: center; gap: 14px; }
+#team-arcade .ta-boat-ring { flex: none; width: 64px; height: 64px; border-radius: 50%; border: 3px solid #ff5a4d; display: grid; place-items: center; transition: background .08s; }
+#team-arcade .ta-boat-ring i { display: block; width: 100%; height: 100%; border-radius: 50%; background: rgba(255,90,77,.55); transform-origin: center; }
+#team-arcade .ta-boat-ring.is-beat { background: rgba(255,210,63,.45); border-color: var(--yellow); }
+#team-arcade .ta-boat-help { display: flex; flex-direction: column; gap: 2px; font-size: 13px; color: var(--muted); }
+#team-arcade .ta-boat-help b { font-size: 17px; color: var(--text); }
+#team-arcade .ta .ta-boat-paddle { display: flex; box-sizing: border-box; width: 100%; margin-top: 12px; height: 64px; font-size: 22px; letter-spacing: .08em; text-transform: uppercase; background: #ff5a4d; box-shadow: 0 0 22px rgba(255,90,77,.45); color: #fff; touch-action: manipulation; user-select: none; -webkit-user-select: none; }
+#team-arcade .ta .ta-boat-paddle:active { transform: scale(.98); background: #ff7a6f; }
+#team-arcade .ta-boat-stats { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 6px; margin-top: 8px; font-size: 12.5px; color: var(--muted); font-family: var(--mono); }
+#team-arcade .ta-boat-standings { list-style: none; margin: 10px 0 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 6px; }
+#team-arcade .ta-boat-standings li { display: flex; gap: 8px; align-items: center; padding: 6px 10px; border-radius: 8px; border-left: 3px solid var(--c); background: rgba(21,18,46,.8); font-family: var(--mono); font-size: 13px; }
+#team-arcade .ta-boat-standings li.is-me { outline: 1px solid rgba(255,255,255,.4); }
+#team-arcade .ta-boat-crews { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 8px; max-width: 560px; margin: 6px auto 14px; }
+#team-arcade .ta .ta-boat-crew { all: unset; cursor: pointer; display: flex; flex-direction: column; gap: 4px; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--line); border-left: 4px solid var(--c); background: rgba(21,18,46,.7); text-align: left; }
+#team-arcade .ta .ta-boat-crew b { color: var(--c); font-size: 15px; }
+#team-arcade .ta .ta-boat-crew span { font-size: 12.5px; color: var(--text); }
+#team-arcade .ta .ta-boat-crew em { font-style: normal; font-size: 11.5px; color: var(--muted); }
+#team-arcade .ta .ta-boat-crew.is-mine { border-color: var(--c); box-shadow: 0 0 0 1px var(--c); }
+#team-arcade .ta-boat-solo { color: var(--muted); font-size: 13px; margin: 4px auto 12px; max-width: 520px; }

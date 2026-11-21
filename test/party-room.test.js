@@ -245,6 +245,47 @@ describe('live party', () => {
     expect(lastText()).toMatch(/guessed 1 drawing/);
   });
 
+  it('runs a Water Festival race: crew picks in the lobby, paddling on the beat, early finish, results posted', async () => {
+    await webhook({ message: { text: '/party boat', chat: GROUP, from: { id: 1, first_name: 'Dara' } } });
+    const r = rooms.get(String(GROUP.id));
+    expect(r.obj.party.game).toBe('boat');
+    const names = ['Dara', 'Sokha', 'Navin', 'Bopha'];
+    const ws = names.map((n, i) => fakeWs(`tg-${i + 1}`, n));
+    r.sockets.push(...ws);
+    names.forEach((n, i) => join(r.obj.party, { key: `tg-${i + 1}`, name: n }, clock + i));
+    // Dara and Sokha both pick Hanuman in the lobby
+    await r.obj.webSocketMessage(ws[0], JSON.stringify({ type: 'crew', c: 1 }));
+    await r.obj.webSocketMessage(ws[1], JSON.stringify({ type: 'crew', c: 1 }));
+    expect(ws[2].inbox.at(-1).party.players.find(p => p.name === 'Dara').crew).toBe(1);
+    clock = r.alarm(); await r.obj.alarm();
+    clearInterval(r.obj.ticker); r.obj.ticker = null; // drive the race clock by hand
+    const sim = r.obj.battle;
+    expect(sim.mode).toBe('crews');
+    expect(sim.boats.map(b => b.name)).toEqual(['Naga', 'Hanuman']);
+    expect(sim.boats[1].members).toEqual(['tg-1', 'tg-2']);
+    const { step } = await import('../src/party/boat.js');
+    // Hanuman (Dara + Sokha) paddle on every beat together; Naga only tap now and then
+    const done = new Set();
+    for (let t = clock; t < clock + 95000 && !sim.over; t += 20) {
+      for (const beat of sim.beats) for (const [i, w] of ws.entries()) {
+        const id = `${i}@${beat.t}`;
+        const keen = i < 2 || Math.round(beat.t / 600) % 3 === 0;
+        if (keen && !done.has(id) && t >= beat.t + 25) { done.add(id); await r.obj.webSocketMessage(w, JSON.stringify({ type: 'paddle', t })); clock = t; }
+      }
+      clock = t; step(sim, t);
+    }
+    expect(sim.over).toBe(true);
+    expect(ws[0].inbox.some(m => m.type === 'paddle-result' && m.q === 1)).toBe(true);
+    await r.obj.finishParty();
+    expect(r.obj.party.status).toBe('done');
+    expect(r.obj.party.summary.boats[0].name).toBe('Hanuman');
+    expect(lastText()).toMatch(/🚣 <b>Water Festival Boat Race<\/b> · 4 paddlers/);
+    expect(lastText()).toMatch(/🥇 <b>Hanuman<\/b> \(Dara, Sokha\) · \d+\.\d s/);
+    expect(lastText()).toMatch(/Hanuman<\/b> crew wins the race/);
+    expect(lastText()).toMatch(/Best paddler: <b>(Dara|Sokha)<\/b>/);
+    expect(lastText()).toMatch(/Best sync: <b>Hanuman<\/b>/);
+  });
+
   it('ping gets the server time back (for clock sync)', async () => {
     await webhook({ message: { text: '/party reaction', chat: GROUP, from: { id: 1, first_name: 'Dara' } } });
     const r = rooms.get(String(GROUP.id));
@@ -257,7 +298,7 @@ describe('live party', () => {
     await webhook({ message: { text: '/party', chat: GROUP, from: { id: 1, first_name: 'Dara' } } });
     const picker = sent.find(s => s.method === 'sendMessage').body;
     expect(picker.text).toMatch(/Pick a party game/);
-    expect(picker.reply_markup.inline_keyboard.map(row => row[0].callback_data)).toEqual(['party:reaction', 'party:quiz', 'party:draw', 'party:snake', 'party:battle']);
+    expect(picker.reply_markup.inline_keyboard.map(row => row[0].callback_data)).toEqual(['party:reaction', 'party:quiz', 'party:boat', 'party:draw', 'party:snake', 'party:battle']);
     sent.length = 0;
     await webhook({ callback_query: { id: 'p1', from: { id: 2, first_name: 'Sokha' }, data: 'party:battle', message: { chat: GROUP, message_id: 50 } } });
     expect(sent.find(s => s.method === 'editMessageText').body.text).toMatch(/Sokha<\/b> picked <b>🚀 Ship Battle/);
