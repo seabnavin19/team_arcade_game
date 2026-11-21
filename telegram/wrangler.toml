@@ -15,6 +15,7 @@ GAME_SHORT_NAME = "arcade"          # the short name you give the game in @BotFa
 GITHUB_REPO = "seabnavin19/team_arcade_game"
 DATA_BRANCH = "scores"              # scores are saved as JSON files on this branch
 ANNOUNCE = "top3"                   # post in the group when someone reaches: top3 | first | off
+MUSIC_ANNOUNCE = "off"              # music room: post each new song in the group: now-playing | off
 
 # Secrets (set from GitHub secrets by the deploy workflow, never written here):
 #   BOT_TOKEN      from @BotFather
@@ -29,3 +30,12 @@ class_name = "PartyRoom"
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["PartyRoom"]
+
+# Music rooms (one per group), separate from parties so both can run at once.
+[[durable_objects.bindings]]
+name = "MUSIC"
+class_name = "MusicRoom"
+
+[[migrations]]
+tag = "v2"
+new_sqlite_classes = ["MusicRoom"]

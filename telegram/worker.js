@@ -3,4 +3,5 @@
 import { createHandler } from './app.js';
 
 export { PartyRoom } from './party-room.js';
+export { MusicRoom } from './music-room.js';
 export default createHandler();
