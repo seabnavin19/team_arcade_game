@@ -206,3 +206,94 @@ describe('music room', () => {
     expect(msg).toMatchObject({ chat_id: -100, parse_mode: 'HTML', text: '🎵 Now playing: <b>Song B</b> (added by Dara)' });
   });
 });
+
+import { createHandler } from '../telegram/app.js';
+import { PartyRoom } from '../telegram/party-room.js';
+import { deriveKeys, verify, sign } from '../telegram/token.js';
+
+describe('music bot', () => {
+  const BASE_ENV = { BOT_TOKEN: '1:x', DATA_TOKEN: 'g', ARCADE_SECRET: 'a-very-long-test-secret-123', GITHUB_REPO: 'me/repo', DATA_BRANCH: 'scores', GAME_URL: 'https://me.github.io/repo/', GAME_SHORT_NAME: 'arcade', MUSIC_ANNOUNCE: 'off' };
+  const GROUP = { id: -100555, type: 'supergroup', title: 'Team' };
+  let worker, keys, cardId;
+  const ns = Cls => {
+    const map = new Map();
+    return {
+      idFromName: n => n,
+      get(id) {
+        if (!map.has(id)) {
+          const store = new Map(); const sockets = [];
+          const ctx = { storage: { get: async k => structuredClone(store.get(k)), put: async (k, v) => { store.set(k, structuredClone(v)); }, setAlarm: async () => {}, deleteAlarm: async () => {} }, getWebSockets: () => sockets, acceptWebSocket: ws => sockets.push(ws) };
+          const obj = new Cls(ctx, env, { now: () => clock, fetch: botFetch });
+          map.set(id, { fetch: (url, init) => obj.fetch(url instanceof Request ? url : new Request(url, init)) });
+        }
+        return map.get(id);
+      },
+    };
+  };
+  async function botFetch(url, init = {}) {
+    const u = new URL(url);
+    if (u.hostname === 'api.telegram.org') {
+      const method = u.pathname.split('/').pop();
+      sent.push({ method, body: init.body ? JSON.parse(init.body) : {} });
+      const result = method === 'sendGame' ? { message_id: cardId++ } : method === 'getMe' ? { username: 'TeamArcadeBot' } : true;
+      return new Response(JSON.stringify({ ok: true, result }));
+    }
+    return new Response(JSON.stringify({}), { status: 404 });
+  }
+  const ctxW = { waitUntil: p => p.catch(() => {}) };
+  const webhook = update => worker.fetch(new Request('https://w.dev/telegram', { method: 'POST', headers: { 'X-Telegram-Bot-Api-Secret-Token': keys.webhookSecret }, body: JSON.stringify(update) }), env, ctxW);
+  const tap = async messageId => {
+    sent.length = 0;
+    await webhook({ callback_query: { id: 'q', from: { id: 2, first_name: 'Sokha' }, game_short_name: 'arcade', message: { chat: GROUP, message_id: messageId } } });
+    const url = new URL(sent.find(s => s.method === 'answerCallbackQuery').body.url);
+    return { hash: new URLSearchParams(url.hash.slice(1)), url };
+  };
+
+  beforeEach(async () => {
+    cardId = 777;
+    env = { ...BASE_ENV }; env.PARTY = ns(PartyRoom); env.MUSIC = ns(MusicRoom);
+    worker = createHandler({ fetch: botFetch, now: () => clock });
+    keys = await deriveKeys(BASE_ENV.ARCADE_SECRET);
+  });
+
+  it('/music posts a card with an Open music room button', async () => {
+    await webhook({ message: { text: '/music', chat: GROUP, from: { id: 1, first_name: 'Dara' } } });
+    const card = sent.find(s => s.method === 'sendGame').body;
+    expect(card.reply_markup.inline_keyboard[0][0]).toEqual({ text: '🎵 Open music room', callback_game: {} });
+    expect(card.game_short_name).toBe('arcade');
+  });
+
+  it('/music in a private chat explains it is for groups', async () => {
+    await webhook({ message: { text: '/music', chat: { id: 1, type: 'private' }, from: { id: 1, first_name: 'Dara' } } });
+    expect(sent.find(s => s.method === 'sendMessage').body.text).toBe('Music rooms are for groups: add me to your team group and send /music there.');
+    expect(sent.find(s => s.method === 'sendGame')).toBeUndefined();
+  });
+
+  it('the music card opens a music link; a normal card does not', async () => {
+    await webhook({ message: { text: '/music', chat: GROUP, from: { id: 1, first_name: 'Dara' } } });
+    const m = await tap(777);
+    expect(m.hash.get('music')).toBe('1');
+    expect((await verify(keys.tokenKey, m.hash.get('t'), clock)).m).toBe(1);
+    const plain = await tap(12);
+    expect(plain.hash.get('music')).toBeNull();
+    expect((await verify(keys.tokenKey, plain.hash.get('t'), clock)).m).toBeUndefined();
+  });
+
+  it('a party card still opens the party when a music card exists', async () => {
+    await webhook({ message: { text: '/music', chat: GROUP, from: { id: 1, first_name: 'Dara' } } }); // card 777
+    await webhook({ message: { text: '/party reaction', chat: GROUP, from: { id: 1, first_name: 'Dara' } } }); // card 778
+    const p = await tap(778);
+    expect(p.hash.get('party')).toBe('1');
+    expect(p.hash.get('music')).toBeNull();
+    expect((await tap(777)).hash.get('music')).toBe('1');
+  });
+
+  it('/music/ws needs a music link', async () => {
+    const t = await sign(keys.tokenKey, { typ: 's', u: 2, n: 'Sokha', c: GROUP.id, iat: clock, exp: clock + 3600e3 });
+    const res = await worker.fetch(new Request(`https://w.dev/music/ws?t=${encodeURIComponent(t)}`), env, ctxW);
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ reason: 'not a music link' });
+    const bad = await worker.fetch(new Request('https://w.dev/music/ws?t=nope'), env, ctxW);
+    expect(bad.status).toBe(401);
+  });
+});
