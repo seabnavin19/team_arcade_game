@@ -48,7 +48,7 @@ As soon as 2 players are in, anyone in the lobby can tap **▶ Start now**. Ever
 
 **🚣 Water Festival Boat Race** (up to 90 seconds, 2–16 players)
 - A Bon Om Touk dragon-boat race on the Tonle Sap, finishing at the Royal Palace.
-- A drum beats; tap **Paddle** as the ring closes. Perfect strokes push hardest, off-beat strokes barely move you.
+- A drum beats (about 75 a minute, faster on the final stretch); tap **Paddle** as the ring closes. Perfect strokes push hardest, off-beat strokes barely move you.
 - With fewer than 4 players everyone races their own boat. From 4 players you race in crews (Naga, Hanuman, Garuda, Apsara): pick one in the lobby or get placed in the smallest. When the whole crew strokes on the same beat, the boat gets a sync boost.
 - The drum speeds up on the final stretch. Boats far behind get a small catch-up boost, so races stay close.
 - The bot posts the places, the winning crew, the best paddler and the best-synced crew.

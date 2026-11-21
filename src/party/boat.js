@@ -8,9 +8,9 @@
 // The drum speeds up on the final stretch. First boat past the Royal Palace wins.
 
 export const COURSE = 1000;            // distance to the finish
-export const BEAT_MS = 600, FAST_BEAT_MS = 450, FINAL_STRETCH = 0.75;
+export const BEAT_MS = 800, FAST_BEAT_MS = 650, FINAL_STRETCH = 0.75;
 export const WINDOW_MS = 300, PERFECT_MS = 90, GOOD_MS = 180;
-export const STROKE = 14.4, DRAG = 1.2;
+export const STROKE = 19.2, DRAG = 1.2;
 export const SYNC_BOOST = 1.35, STREAK_BOOST = 1.25, STREAK_FOR_BOOST = 4;
 export const LEAD_IN_MS = 1500, MAX_SECONDS = 90, GRACE_MS = 8000;
 export const CATCH_UP = 0.3;           // boats far behind get up to +30% per stroke, to keep races close
