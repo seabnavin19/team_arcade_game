@@ -60,3 +60,115 @@ export function removeSong(m, entryId, userKey) {
   m.queue.splice(i, 1);
   return { ok: true };
 }
+
+/** Seconds into the playing song (held while paused). */
+export function position(m, nowMs) {
+  if (!m.now) return 0;
+  if (m.now.pausedAt != null) return m.now.pausedAt;
+  return Math.max(0, (nowMs - m.now.startedAt) / 1000);
+}
+
+export function pause(m, nowMs, { manual }) {
+  if (!m.now) return;
+  if (m.now.pausedAt == null) m.now.pausedAt = position(m, nowMs);
+  if (manual) m.manualPause = true;
+}
+
+export function resume(m, nowMs) {
+  m.manualPause = false;
+  if (!m.now || m.now.pausedAt == null) return;
+  m.now.startedAt = nowMs - m.now.pausedAt * 1000;
+  m.now.pausedAt = null;
+}
+
+/** Start the next waiting song (or go idle). Returns what's playing now. */
+export function advance(m, nowMs) {
+  const next = m.queue.shift();
+  if (next) play(m, next, nowMs);
+  else { m.now = null; m.votes = []; m.manualPause = false; }
+  return m.now;
+}
+
+export const neededVotes = listenerCount => Math.max(1, Math.ceil(listenerCount / 2));
+
+export function voteSkip(m, userKey, listenerKeys, nowMs) {
+  if (!m.now) return { skipped: false, votes: 0, needed: neededVotes(listenerKeys.length) };
+  if (m.now.addedBy.key === userKey) { advance(m, nowMs); return { skipped: true, votes: 0, needed: 0 }; }
+  if (!m.votes.includes(userKey)) m.votes.push(userKey);
+  return check(m, listenerKeys, nowMs);
+}
+
+function check(m, listenerKeys, nowMs) {
+  const votes = m.votes.length, needed = neededVotes(listenerKeys.length);
+  if (votes > 0 && votes >= needed) { advance(m, nowMs); return { skipped: true, votes, needed }; }
+  return { skipped: false, votes, needed };
+}
+
+/** After listeners change: drop votes of people who left; skip if enough votes remain. */
+export function recheckVotes(m, listenerKeys, nowMs) {
+  if (!m.now) return false;
+  m.votes = m.votes.filter(k => listenerKeys.includes(k));
+  return check(m, listenerKeys, nowMs).skipped;
+}
+
+export function setDuration(m, entryId, seconds) {
+  const s = Number(seconds);
+  if (!m.now || m.now.id !== entryId || !(s >= 1 && s <= 10800)) return { changed: false, tooLong: false };
+  if (m.now.seconds != null && s <= m.now.seconds) return { changed: false, tooLong: false };
+  m.now.seconds = s;
+  return { changed: true, tooLong: s > MAX_SECONDS };
+}
+
+export function clientEnded(m, entryId, nowMs) {
+  if (!m.now || m.now.id !== entryId || m.now.pausedAt != null) return false;
+  const pos = position(m, nowMs);
+  const ok = m.now.seconds != null ? pos >= m.now.seconds - ENDED_SLACK_S : pos >= 10;
+  if (ok) advance(m, nowMs);
+  return ok;
+}
+
+export function unplayable(m, entryId, code, nowMs) {
+  if (!m.now || m.now.id !== entryId || !UNPLAYABLE_CODES.includes(Number(code))) return null;
+  const skipped = m.now;
+  advance(m, nowMs);
+  return skipped;
+}
+
+function songEndsAt(m) {
+  if (!m.now || m.now.pausedAt != null) return null;
+  return m.now.seconds != null ? m.now.startedAt + m.now.seconds * 1000 + END_GRACE_MS : m.now.startedAt + MAX_SECONDS * 1000;
+}
+
+/** When the room's single alarm should next fire, or null. */
+export function nextAlarmAt(m) {
+  const times = [songEndsAt(m), m.emptySince != null ? m.emptySince + IDLE_CLEAR_MS : null].filter(t => t != null);
+  return times.length ? Math.min(...times) : null;
+}
+
+export function onAlarm(m, nowMs) {
+  if (m.emptySince != null && nowMs >= m.emptySince + IDLE_CLEAR_MS) {
+    Object.assign(m, createMusic());
+    return { advanced: false, cleared: true };
+  }
+  const end = songEndsAt(m);
+  if (end != null && nowMs >= end) { advance(m, nowMs); return { advanced: true, cleared: false }; }
+  return { advanced: false, cleared: false };
+}
+
+export function onListenersChanged(m, listenerCount, nowMs) {
+  if (listenerCount === 0) {
+    pause(m, nowMs, { manual: false });
+    if (m.emptySince == null) m.emptySince = nowMs;
+  } else {
+    m.emptySince = null;
+    if (!m.manualPause) resume(m, nowMs);
+  }
+}
+
+export const publicMusic = (m, nowMs) => ({
+  now: m.now, queue: m.queue, votes: m.votes.length,
+  paused: !!m.now && m.now.pausedAt != null, position: position(m, nowMs), serverNow: nowMs,
+});
+
+/** Client: is the player far enough from the shared position to jump? */
+export const driftSeek = (playerSeconds, targetSeconds) => Math.abs(playerSeconds - targetSeconds) > 1.5;
