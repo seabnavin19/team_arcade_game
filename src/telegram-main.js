@@ -5,6 +5,7 @@ import { createTelegramStore, decodeToken } from './telegram/client.js';
 import { createSound } from './core/sound.js';
 import { createApp } from './ui/app.js';
 import { createPartyApp } from './party/party-app.js';
+import { createMusicApp } from './music/music-app.js';
 
 async function boot() {
   const root = document.getElementById('team-arcade');
@@ -24,6 +25,11 @@ async function boot() {
   // "Join the party" link → live party screen first; "Back to arcade" → the normal hub.
   if (user && claims.p && hash.get('party') === '1') {
     createPartyApp(root, { api, token, sound, onExit: () => { history.replaceState(null, '', `${location.pathname}${location.search}#t=${token}`); startHub(); } });
+    return;
+  }
+  // "Open music room" link → the music room.
+  if (user && claims.m && hash.get('music') === '1') {
+    createMusicApp(root, { api, token, onExit: () => { history.replaceState(null, '', `${location.pathname}${location.search}#t=${token}`); startHub(); } });
     return;
   }
   startHub();

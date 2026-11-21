@@ -5,6 +5,7 @@
 //  POST /score      save a finished run as JSON in GitHub, announce new top places
 //  GET  /board      this week's and last week's boards for the player's group
 //  GET  /party/ws   live party connection (WebSocket), handled by the group's PartyRoom
+//  GET  /music/ws   music room connection (WebSocket), handled by the group's MusicRoom
 //  GET  /setup      one-time setup: webhook, commands, scores branch (needs ARCADE_SECRET)
 //  cron             Monday morning: post last week's results in every group
 
@@ -103,6 +104,11 @@ export function createHandler({ fetch: fetchImpl = (...a) => fetch(...a), now = 
     return res.json();
   };
 
+  const musicCall = async (env, chatId, path, body) => {
+    const res = await env.MUSIC.get(env.MUSIC.idFromName(String(chatId))).fetch(`https://music${path}`, body ? { method: 'POST', body: JSON.stringify(body) } : undefined);
+    return res.json();
+  };
+
   /** Open a party lobby in a group. Returns false if one is already running. */
   async function startParty(c, chat, game, threadId, { pickedBy, pickerMessageId } = {}) {
     const g = PARTY_GAMES[game];
@@ -181,9 +187,14 @@ export function createHandler({ fetch: fetchImpl = (...a) => fetch(...a), now = 
           if (party) { claims.p = party.id; if (duo) claims.r = 'duo'; break; }
         }
       }
+      // …or "Open music room" on a music card?
+      if (chat && !claims.p && c.env.MUSIC) {
+        const { card } = await musicCall(c.env, chat.id, `/is-card?messageId=${cq.message.message_id}`).catch(() => ({}));
+        if (card) claims.m = 1;
+      }
       const t = await sign(c.keys.tokenKey, claims);
       // v= changes every minute so the phone fetches a fresh page (which loads the newest game) instead of a cached one
-      const url = `${c.env.GAME_URL}?api=${encodeURIComponent(origin)}&v=${Math.floor(now() / 60000)}#t=${t}${claims.p ? '&party=1' : ''}`;
+      const url = `${c.env.GAME_URL}?api=${encodeURIComponent(origin)}&v=${Math.floor(now() / 60000)}#t=${t}${claims.p ? '&party=1' : ''}${claims.m ? '&music=1' : ''}`;
       ctx.waitUntil(rememberChat(c, chat).catch(e => console.log('rememberChat', e.message)));
       return c.tg('answerCallbackQuery', { callback_query_id: cq.id, url });
     }
@@ -230,6 +241,17 @@ export function createHandler({ fetch: fetchImpl = (...a) => fetch(...a), now = 
         if (pick) return startParty(c, msg.chat, pick, msg.message_thread_id, { pickedBy: displayName(msg.from) });
         return reply('💞 <b>Duo Mode</b>: games for two, one shared score. Pick one:', { reply_markup: { inline_keyboard: DUO_GAMES.map(id => [{ text: `${PARTY_GAMES[id].emoji} ${PARTY_GAMES[id].title}`, callback_data: `party:${id}` }]) } });
       }
+      case 'music': {
+        if (msg.chat.type === 'private') return reply('Music rooms are for groups: add me to your team group and send /music there.');
+        if (!c.env.MUSIC) return reply('The music room is not switched on for this server yet.');
+        const card = await c.tg('sendGame', {
+          chat_id: msg.chat.id, game_short_name: c.env.GAME_SHORT_NAME,
+          ...(msg.message_thread_id ? { message_thread_id: msg.message_thread_id } : {}),
+          reply_markup: { inline_keyboard: [[{ text: '🎵 Open music room', callback_game: {} }]] },
+        });
+        if (card.ok) await musicCall(c.env, msg.chat.id, '/set-card', { chat: msg.chat.id, messageId: card.result.message_id });
+        return card;
+      }
       case 'board':
       case 'champion':
       case 'scores': {
@@ -248,6 +270,7 @@ export function createHandler({ fetch: fetchImpl = (...a) => fetch(...a), now = 
           '',
           '/arcade: post the game, then tap <b>Play</b>',
           '/party: live multiplayer round: ⚡ Reaction Tap, 💡 Brain Race, 🎨 Draw & Guess, 🐍 Snake Arena or 🚀 Ship Battle',
+          '/music: open the music room and listen to YouTube songs together',
           '/duo: Duo Mode for two players on one team: 💞 In Sync or 🍜 Night Market Duo (/duo board shows the week\'s top duos)',
           '/board: this week\'s leaderboards and champion',
           '/lastweek: last week\'s results',
@@ -332,6 +355,7 @@ export function createHandler({ fetch: fetchImpl = (...a) => fetch(...a), now = 
     const cmds = await c.tg('setMyCommands', { commands: [
       { command: 'arcade', description: 'Post Team Arcade, then tap Play' },
       { command: 'party', description: 'Live party: Reaction, Brain Race, Draw & Guess, Snake, Ships' },
+      { command: 'music', description: 'Listen to music together (YouTube)' },
       { command: 'duo', description: 'Duo Mode for two: In Sync, Night Market Duo' },
       { command: 'board', description: "This week's leaderboards" },
       { command: 'lastweek', description: "Last week's results" },
@@ -377,6 +401,14 @@ export function createHandler({ fetch: fetchImpl = (...a) => fetch(...a), now = 
           const fwd = new Request('https://party/ws', request);
           fwd.headers.set('X-Arcade-User', JSON.stringify({ key: `tg-${s.u}`, name: s.n, partyId: s.p }));
           return room(env, s.c, s.r === 'duo').fetch(fwd);
+        }
+        if (url.pathname === '/music/ws') {
+          const s = await session(c, url.searchParams.get('t'));
+          if (!s || !env.MUSIC || typeof s.c !== 'number') return json({ reason: 'expired' }, 401);
+          if (!s.m) return json({ reason: 'not a music link' }, 400);
+          const fwd = new Request('https://music/ws', request);
+          fwd.headers.set('X-Arcade-User', JSON.stringify({ key: `tg-${s.u}`, name: s.n }));
+          return env.MUSIC.get(env.MUSIC.idFromName(String(s.c))).fetch(fwd);
         }
         if (url.pathname === '/setup') {
           if (url.searchParams.get('key') !== env.ARCADE_SECRET) return new Response('forbidden', { status: 403 });

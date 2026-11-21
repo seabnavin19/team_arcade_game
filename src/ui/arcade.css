@@ -212,6 +212,34 @@ body.ta-fullpage #team-arcade .ta { max-width: 1040px; margin: 0 auto; border: 0
 #team-arcade .ta-draw-chat li.is-close { color: var(--yellow); }
 #team-arcade .ta-draw-chat li.is-sys { color: var(--muted); }
 
+/* ---------- music room ---------- */
+#team-arcade .ta .ta-music-exit { margin: 0 0 0 auto; padding: 7px 12px; }
+#team-arcade .ta-music-stage { display: grid; grid-template-columns: minmax(0, 3fr) minmax(220px, 2fr); gap: 18px; margin-top: 16px; align-items: center; }
+#team-arcade .ta-music-player { position: relative; aspect-ratio: 16 / 9; border-radius: 12px; overflow: hidden; background: var(--panel); border: 1px solid var(--line); }
+#team-arcade .ta-music-player iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
+#team-arcade .ta-music-unlock { all: unset; cursor: pointer; position: absolute; inset: 0; display: grid; place-items: center; font-size: 22px; font-weight: 900; color: var(--cyan); background: rgba(12,10,29,.82); z-index: 2; }
+#team-arcade .ta-music-unlock:hover { color: var(--yellow); }
+#team-arcade .ta-music-unlock[hidden], #team-arcade .ta-music-empty[hidden] { display: none; }
+#team-arcade .ta-music-empty { position: absolute; inset: 0; display: grid; place-items: center; padding: 16px; text-align: center; color: var(--muted); z-index: 1; background: var(--panel); }
+#team-arcade .ta-music-title { font-size: 20px; font-weight: 900; color: var(--text); overflow-wrap: anywhere; }
+#team-arcade .ta-music-meta { margin-top: 6px; color: var(--muted); font-family: var(--mono); font-size: 13px; }
+#team-arcade .ta-music-buttons { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+#team-arcade .ta .ta-music-buttons .ta-btn { margin: 0; }
+#team-arcade .ta .ta-music-buttons .ta-btn:disabled { opacity: .4; cursor: default; }
+#team-arcade .ta-music-note { min-height: 1.4em; margin: 12px 0 6px; color: var(--yellow); }
+#team-arcade .ta-music-add { display: flex; gap: 8px; }
+#team-arcade .ta .ta-music-add input { all: unset; box-sizing: border-box; flex: 1; min-width: 0; padding: 12px 14px; border-radius: 10px; background: #fff; color: #1b1b2f; font: 600 16px system-ui, sans-serif; }
+#team-arcade .ta .ta-music-add .ta-btn { margin: 0; }
+#team-arcade .ta-music-h { margin: 20px 0 8px; font-size: 14px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+#team-arcade .ta-music-queue { margin: 0; padding: 0 0 0 22px; display: grid; gap: 6px; }
+#team-arcade .ta-music-queue li { padding: 6px 4px; }
+#team-arcade .ta-music-queue li:not(.ta-muted) { display: list-item; }
+#team-arcade .ta-music-queue li > * { vertical-align: middle; }
+#team-arcade .ta-music-q-title { margin-right: 10px; overflow-wrap: anywhere; }
+#team-arcade .ta-music-queue .ta-iconbtn { display: inline-grid; width: 26px; height: 26px; margin-left: 8px; }
+#team-arcade .ta-music-listeners { margin-top: 18px; color: var(--muted); font-size: 13px; }
+@media (max-width: 700px) {
+  #team-arcade .ta-music-stage { grid-template-columns: 1fr; }
 /* Duo Mode: In Sync */
 #team-arcade .ta-duo[hidden] { display: none; }
 #team-arcade .ta-sync-about { text-align: center; color: var(--muted); font-size: 14px; margin-bottom: 8px; }
