@@ -38,7 +38,7 @@ Telegram group ──/arcade, Play──▶ Cloudflare Worker (telegram/worker.j
 - **The Worker** is the only part holding the bot token and the GitHub token. It checks each run (who played, how long it took, whether the score is possible) before saving.
 - **Group messages:** the bot posts when someone takes #1 or enters the top 3 of a game, and every Monday at 08:30 it posts last week's results.
 
-**Bot commands:** `/arcade` posts the game with a Play button, `/party` starts a live party round (below), `/board` shows this week's leaderboards, `/lastweek` shows last week's results, and `/help` explains the bot.
+**Bot commands:** `/arcade` posts the game with a Play button, `/party` starts a live party round (below), `/music` opens the music room (below), `/board` shows this week's leaderboards, `/lastweek` shows last week's results, and `/help` explains the bot.
 
 ### 🎉 Live party (multiplayer)
 
@@ -86,6 +86,25 @@ Party scores are just for fun. They don't count toward the weekly leaderboards.
 
 Each group's party runs in its own live room on Cloudflare (a Durable Object, included in the free plan).
 The room is the referee. In Ship Battle it runs the arena 20 times a second and decides every hit, and in Snake Arena it moves every snake and decides every crash. In Reaction Tap it checks every tap against its own clock.
+
+### 🎵 Music room (listen together)
+
+Send **`/music`** in the group and tap **🎵 Open music room**. Everyone in the room hears the same YouTube song at the same moment, and people who join late start mid-song.
+
+- **Add a song:** paste a YouTube link (`youtube.com/watch?v=…`, `youtu.be/…`, Shorts or YouTube Music) and tap **Add**. The queue shows each song's title and who added it.
+- **Pause / Play** applies to everyone.
+- **Skip:** whoever added the playing song can skip it straight away. Everyone else taps **Vote to skip**, and the song is skipped once half of the people listening have voted (rounded up).
+- **Remove:** tap ✕ next to a song you added to take it out of the queue.
+- When everyone leaves, the music pauses and carries on from the same spot when someone opens the room again. After 24 hours with nobody in the room, the queue is cleared.
+- Limits: 50 songs in the queue, 5 waiting songs per person, songs up to 15 minutes.
+
+Things to know:
+- It plays YouTube's own player, so nothing is downloaded or stored. Some official music videos (often record-label / VEVO uploads) block playing outside YouTube. The room turns those down when you add them, or skips them with a notice if they fail to play. A lyric or audio upload of the same song usually works.
+- **Built for computers.** Telegram Desktop opens the room in your browser, where the music keeps playing in a background tab or a minimised window. On phones, music stops when the screen locks or you leave Telegram, and jumps back to the right spot when you return.
+- Your browser needs one click (**🎧 Tap to listen**) before it's allowed to play sound.
+- The bot doesn't post anything in the group when songs change. To post "🎵 Now playing…" for each song, set `MUSIC_ANNOUNCE = "now-playing"` in `telegram/wrangler.toml`.
+
+Each group's music room is its own Durable Object, separate from parties, so music and a party can run at the same time.
 
 > **Privacy:** this repository is public, so the `scores` branch can be read by anyone. It shows players' first names, last initials and scores.
 > To keep it private, make the repository private. GitHub Pages on a private repository needs a paid GitHub plan.
@@ -144,6 +163,8 @@ If the last step says it was skipped, open this address once in a browser:
 | Time of the Monday results post | `crons` in `telegram/wrangler.toml` (UTC) |
 | Game rules or balance | `src/games/…`. Drone Shooter's rules are in `shooter-engine.js` |
 | Server-side score limits | `src/games/meta.js` |
+| Music room limits (queue size, songs per person, longest song, idle time) | top of `src/music/rules.js` |
+| "Now playing" messages in the group (`now-playing` or `off`) | `MUSIC_ANNOUNCE` in `telegram/wrangler.toml` |
 
 Every push to `main` re-tests and re-deploys both the games and the Worker.
 
@@ -169,7 +190,7 @@ To update the games, upload a new `arcade.js` with the same name. Players get it
 
 ```bash
 npm install
-npm test                       # 116 automated tests: game rules, saving and conflicts, ranking, the Telegram server, live parties
+npm test                       # 169 automated tests: game rules, saving and conflicts, ranking, the Telegram server, live parties, the music room
 npm run build                  # dist/ (Confluence) and site/ (Telegram / GitHub Pages)
 
 node dev/local-telegram.mjs    # Telegram version with a pretend Telegram + GitHub → http://localhost:8787/play?name=Dara
@@ -183,6 +204,7 @@ src/games/      the four games (+ meta.js: names, formats and score limits share
 src/ui/         the arcade hub and styles
 src/main.js            Confluence entry      src/telegram-main.js   Telegram entry
 src/party/      live party rules and screen
-telegram/       Cloudflare Worker: bot, signed links, GitHub JSON storage, Monday results, party rooms
+src/music/      music room rules and screen
+telegram/       Cloudflare Worker: bot, signed links, GitHub JSON storage, Monday results, party rooms, music rooms
 web/            GitHub Pages page + game cover image
 ```
