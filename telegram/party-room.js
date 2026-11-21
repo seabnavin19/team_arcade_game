@@ -2,20 +2,27 @@
 // Players connect with WebSockets; alarms start and end the round; the room
 // posts the lobby, a cancel notice, and the results in the group.
 
-import { createParty, join, hit, miss, start, startNow, finish, timelineFor, publicState, isActive, MIN_PLAYERS, PARTY_SECONDS, PARTY_GAMES } from '../src/party/rules.js';
+import { createParty, join, hit, miss, start, startNow, finish, timelineFor, publicState, isActive, isDuo, MIN_PLAYERS, PARTY_SECONDS, PARTY_GAMES } from '../src/party/rules.js';
 import { createBattle, addShip, setInput, step as stepBattle, snapshot as battleSnapshot, battleStats } from '../src/party/battle.js';
 import { createSnakeGame, addSnake, setDir, step as stepSnake, snapshot as snakeSnapshot, snakeStats, TICK_MS as SNAKE_TICK_MS } from '../src/party/snake.js';
 
 import { setupDraw, beginRound, guess as drawGuess, guessersLeft, maskWord, hintIndex, HINT_AT, MAX_STROKE_POINTS } from '../src/party/draw.js';
 import { buildQuiz, phaseAt, answer as quizAnswer, questionMsg, QUESTIONS } from '../src/party/quiz.js';
+import { buildSync, startSync, pick as syncPick, advance as syncAdvance, roundMsg as syncRoundMsg, syncSummary, pairOf, ROUNDS as SYNC_ROUNDS } from '../src/party/sync.js';
+import { createMarket, addCook, act as marketAct, step as stepMarket, snapshot as marketSnapshot, marketStats, marketSummary, restoreMarket, TICK_MS as MARKET_TICK_MS } from '../src/party/market.js';
+import { weekKey } from '../src/core/time.js';
 
 // Real-time party games the room simulates itself, and how.
 const LIVE = {
-  battle: { tickMs: 50, create: createBattle, add: addShip, step: sim => stepBattle(sim, 0.05), snapshot: battleSnapshot, stats: battleStats,
+  battle: { tickMs: 50, types: ['input'], create: createBattle, add: addShip, step: sim => stepBattle(sim, 0.05), snapshot: battleSnapshot, stats: battleStats,
     input: (sim, key, msg) => { if (msg.type === 'input') setInput(sim, key, Number(msg.mx), Number(msg.my)); } },
-  snake: { tickMs: SNAKE_TICK_MS, create: createSnakeGame, add: addSnake, step: stepSnake, snapshot: snakeSnapshot, stats: snakeStats,
+  snake: { tickMs: SNAKE_TICK_MS, types: ['dir'], create: createSnakeGame, add: addSnake, step: stepSnake, snapshot: snakeSnapshot, stats: snakeStats,
     input: (sim, key, msg) => { if (msg.type === 'dir') setDir(sim, key, String(msg.d)); } },
+  market: { tickMs: MARKET_TICK_MS, types: ['cook', 'plate', 'trash', 'serve', 'toss'], create: createMarket, add: addCook, step: stepMarket, snapshot: marketSnapshot, stats: marketStats,
+    summary: marketSummary, restore: (sim, p, now) => restoreMarket(sim, p.summary, (now - p.startAt) / MARKET_TICK_MS),
+    input: (sim, key, msg) => marketAct(sim, key, msg) },
 };
+const DUO_BOARD_SIZE = 5;
 
 const esc = s => String(s ?? '').replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
 const MEDALS = ['🥇', '🥈', '🥉'];
@@ -34,6 +41,8 @@ export class PartyRoom {
     this.quizTicker = null;
     this.quizSent = { q: -1, r: -1 };
     this.drawTicker = null;
+    this.syncQs = null;     // In Sync questions for this party
+    this.syncTicker = null;
   }
 
   async load() {
@@ -68,7 +77,7 @@ export class PartyRoom {
 
     if (url.pathname === '/create') {
       if (isActive(this.party)) return Response.json({ created: false, party: publicState(this.party) });
-      this.stopBattle(); this.stopQuiz(); this.stopDraw(); this.quiz = null; this.quizSent = { q: -1, r: -1 };
+      this.stopBattle(); this.stopQuiz(); this.stopDraw(); this.stopSync(); this.syncQs = null; this.quiz = null; this.quizSent = { q: -1, r: -1 };
       this.party = createParty({ id: crypto.randomUUID().slice(0, 8), chat: body.chat, seed: crypto.randomUUID(), secret: crypto.randomUUID(), now: this.now(), joinSeconds: body.joinSeconds, game: body.game });
       this.timeline = timelineFor(this.party);
       await this.save();
@@ -85,6 +94,7 @@ export class PartyRoom {
       return Response.json({ party: match ? publicState(p) : null });
     }
     if (url.pathname === '/state') return Response.json({ party: publicState(this.party), now: this.now() });
+    if (url.pathname === '/duo-board') return Response.json({ week: weekKey(new Date(this.now())), boards: await this.duoBoards() });
 
     if (url.pathname === '/ws') {
       if (request.headers.get('Upgrade') !== 'websocket') return new Response('expected websocket', { status: 426 });
@@ -109,6 +119,9 @@ export class PartyRoom {
         const ph = phaseAt(this.party.startAt, this.now());
         if (ph.phase === 'question') server.send(JSON.stringify(questionMsg(this.quiz, ph)));
       }
+      if (this.party.game === 'sync' && this.party.status === 'running' && this.ensureSync() && this.party.sync.round?.phase === 'question') {
+        server.send(JSON.stringify(syncRoundMsg(this.party, this.syncQs)));
+      }
       return new Response(null, { status: 101, webSocket: client });
     }
     return new Response('not found', { status: 404 });
@@ -123,8 +136,18 @@ export class PartyRoom {
     const p = this.party;
     if (msg.type === 'ping') { ws.send(JSON.stringify({ type: 'pong', c: msg.c, s: this.now() })); return; }
     if (!p) return;
-    if (msg.type === 'input' || msg.type === 'dir') {
-      if (LIVE[p.game] && p.status === 'running' && this.ensureBattle()) LIVE[p.game].input(this.battle, me.key, msg);
+    if (LIVE[p.game]?.types.includes(msg.type)) {
+      if (p.status === 'running' && this.ensureBattle()) LIVE[p.game].input(this.battle, me.key, msg);
+      return;
+    }
+    if (msg.type === 'pick') {
+      if (p.game !== 'sync' || !this.ensureSync()) return;
+      const r = syncPick(p, me.key, msg.i, msg.c, this.now());
+      if (r.kind === 'invalid') return;
+      if (r.kind === 'locked') await this.save();
+      ws.send(JSON.stringify({ type: 'sync-locked', i: msg.i, c: msg.c }));
+      this.broadcast({ type: 'sync-partner', i: msg.i, locked: Object.keys(p.sync.picks[msg.i] || {}) });
+      if (r.both) await this.syncTick();
       return;
     }
     if (p.game === 'draw' && (msg.type === 'stroke' || msg.type === 'undo' || msg.type === 'clear' || msg.type === 'guess')) {
@@ -211,6 +234,7 @@ export class PartyRoom {
       const unit = live.add(this.battle, key, pl.name);
       if (unit) Object.assign(unit, { score: pl.score || 0, kos: pl.kos || 0, downs: pl.downs || 0, hits: pl.hits || 0, ...(p.game === 'snake' ? { food: pl.hits || 0 } : {}) });
     }
+    live.restore?.(this.battle, p, this.now());
     let n = 0;
     const every2s = Math.round(2000 / live.tickMs);
     this.ticker = setInterval(() => {
@@ -231,6 +255,7 @@ export class PartyRoom {
       const pl = this.party.players[key];
       if (pl) Object.assign(pl, { score: st.score, kos: st.kos, downs: st.downs, hits: st.hits });
     }
+    if (live.summary) this.party.summary = live.summary(this.battle);
   }
 
   stopBattle() {
@@ -272,6 +297,54 @@ export class PartyRoom {
   stopQuiz() {
     if (this.quizTicker) clearInterval(this.quizTicker);
     this.quizTicker = null;
+  }
+
+  // ---------- In Sync rounds ----------
+  ensureSync() {
+    const p = this.party;
+    if (!p || p.game !== 'sync') return false;
+    if (!this.syncQs) this.syncQs = buildSync(p.secret || p.seed);
+    if (p.status === 'running' && !p.sync) startSync(p, this.now());
+    if (p.status === 'running' && !this.syncTicker) this.syncTicker = setInterval(() => { this.syncTick().catch(e => console.log('syncTick', e.message)); }, 200);
+    return true;
+  }
+
+  async syncTick() {
+    const p = this.party;
+    if (!p || p.status !== 'running' || !p.sync) return;
+    const out = syncAdvance(p, this.now());
+    if (out.reveal) {
+      await this.save();
+      const q = this.syncQs[out.reveal.i];
+      this.broadcast({ type: 'sync-reveal', ...out.reveal, o: q.o, matches: p.sync.matches, n: SYNC_ROUNDS, party: publicState(p) });
+    }
+    if (out.open !== undefined) { await this.save(); this.broadcast(syncRoundMsg(p, this.syncQs)); }
+    if (out.done) { this.stopSync(); await this.finishParty(); }
+  }
+
+  stopSync() { if (this.syncTicker) clearInterval(this.syncTicker); this.syncTicker = null; }
+
+  // ---------- Duo Mode weekly board (kept in this room's storage) ----------
+  async duoBoards() {
+    const week = weekKey(new Date(this.now()));
+    return (await this.ctx.storage.get(`duo:${week}`)) || {};
+  }
+
+  /** Remember this duo's score if it's one of the week's best. Returns the game's board. */
+  async recordDuo(p) {
+    const week = weekKey(new Date(this.now()));
+    const boards = (await this.ctx.storage.get(`duo:${week}`)) || {};
+    const keys = pairOf(p);
+    const id = [...keys].sort().join('+');
+    const names = keys.map(k => p.players[k]?.name || '?');
+    const score = p.players[keys[0]]?.score || 0;
+    const list = (boards[p.game] ||= []);
+    const old = list.find(e => e.id === id);
+    if (old) { if (score > old.score) Object.assign(old, { score, names }); } else list.push({ id, names, score });
+    list.sort((a, b) => b.score - a.score);
+    boards[p.game] = list.slice(0, DUO_BOARD_SIZE);
+    await this.ctx.storage.put(`duo:${week}`, boards);
+    return boards[p.game];
   }
 
   // ---------- Draw & Guess rounds ----------
@@ -339,10 +412,19 @@ export class PartyRoom {
       if (status === 'running') {
         if (LIVE[p.game]) { this.ensureBattle(); this.broadcast(this.liveSnap()); }
         if (p.game === 'quiz') { this.quizSent = { q: -1, r: -1 }; this.ensureQuiz(); this.quizTick(); }
+        if (p.game === 'sync') { this.ensureSync(); await this.save(); this.broadcast(syncRoundMsg(p, this.syncQs)); }
         if (p.game === 'draw') { setupDraw(p, this.now()); await this.save(); this.broadcast(this.stateMsg()); this.ensureDraw(); await this.drawTick(false); }
         await this.ctx.storage.setAlarm(LIVE[p.game] ? p.endAt : p.endAt + 1500); // taps get a little grace (and a backstop for Draw & Guess)
       } else {
         const names = Object.values(p.players).map(x => x.name);
+        if (isDuo(p)) {
+          const g = PARTY_GAMES[p.game];
+          await this.tg('sendMessage', {
+            chat_id: p.chat, parse_mode: 'HTML',
+            text: `${g.emoji} ${g.title} cancelled: ${names.length ? `only <b>${esc(names[0])}</b> joined` : 'nobody joined'}. It's a game for 2.\nSend /duo again and ask your partner to tap <b>Join</b>.`,
+          });
+          return;
+        }
         await this.tg('sendMessage', {
           chat_id: p.chat, parse_mode: 'HTML',
           text: `⚡ Party cancelled: ${names.length ? `only <b>${esc(names[0])}</b> joined` : 'nobody joined'}. It needs at least ${MIN_PLAYERS} players.\nTry /party again when more people are on a break.`,
@@ -360,7 +442,14 @@ export class PartyRoom {
       this.stopDraw();
       if (LIVE[p.game]) { this.copyBattleStats(); this.stopBattle(); }
       if (p.game === 'quiz') { this.ensureQuiz(); this.quizTick(); this.stopQuiz(); }
+      if (p.game === 'sync') { this.stopSync(); p.summary = syncSummary(p); }
       const res = finish(p);
+      if (isDuo(p)) {
+        await this.save();
+        this.broadcast(this.stateMsg());
+        await this.postDuoResults(p);
+        return;
+      }
       await this.save();
       this.broadcast(this.stateMsg());
       const g = PARTY_GAMES[p.game || 'reaction'];
@@ -381,5 +470,27 @@ export class PartyRoom {
     }
   }
 }
+
+// Duo results: one team, one score, plus the week's best duos.
+PartyRoom.prototype.postDuoResults = async function postDuoResults(p) {
+  const g = PARTY_GAMES[p.game];
+  const keys = pairOf(p);
+  const names = keys.map(k => p.players[k]?.name || '?');
+  const score = p.players[keys[0]]?.score || 0;
+  const s = p.summary || {};
+  const board = keys.length === 2 ? await this.recordDuo(p) : [];
+  const id = [...keys].sort().join('+');
+  const line = p.game === 'sync'
+    ? `${s.matches || 0}/${SYNC_ROUNDS} in sync (${s.percent || 0}%) · ${score.toLocaleString('en-US')} pts${s.best >= 3 ? ` · best streak ${s.best}` : ''}`
+    : `$${score.toLocaleString('en-US')} in tips · ${s.served || 0} served${s.walked ? ` · ${s.walked} walked out` : ''}${s.burned ? ` · ${s.burned} burned` : ''}`;
+  const verdict = p.game === 'sync'
+    ? (s.percent >= 75 ? 'Practically one brain. 🧠' : s.percent >= 50 ? 'Nicely in tune!' : 'Lots to talk about over lunch. 😄')
+    : (s.walked === 0 && s.served > 0 ? 'Not one hungry customer left. ⭐' : s.served >= 15 ? 'The busiest stall in the market!' : 'Every great stall starts small. 🍜');
+  const top = board.slice(0, 3).map((e, i) => `${MEDALS[i]} ${esc(e.names.join(' ♥ '))} · ${p.game === 'sync' ? `${e.score.toLocaleString('en-US')} pts` : `$${e.score.toLocaleString('en-US')}`}${e.id === id ? ' ← you' : ''}`);
+  await this.tg('sendMessage', {
+    chat_id: p.chat, parse_mode: 'HTML',
+    text: [`${g.emoji} <b>${g.title}</b> · <b>${esc(names.join(' ♥ '))}</b>`, line, verdict, '', ...(top.length ? ["🏆 <b>This week's top duos</b>", ...top, ''] : []), 'Play again? Send /duo'].join('\n'),
+  });
+};
 
 export { PARTY_SECONDS };
