@@ -99,30 +99,30 @@ describe('skip votes', () => {
   it('skips once enough different people vote', () => {
     const { m, entries } = room(DARA, DARA);
     const L = ['tg-1', 'tg-2', 'tg-3'];
-    expect(voteSkip(m, 'tg-2', L, T)).toEqual({ skipped: false, votes: 1, needed: 2 });
-    expect(voteSkip(m, 'tg-2', L, T)).toEqual({ skipped: false, votes: 1, needed: 2 });
-    expect(voteSkip(m, 'tg-3', L, T + 5000).skipped).toBe(true);
+    expect(voteSkip(m, 'tg-2', L, T, m.now.id)).toEqual({ skipped: false, votes: 1, needed: 2 });
+    expect(voteSkip(m, 'tg-2', L, T, m.now.id)).toEqual({ skipped: false, votes: 1, needed: 2 });
+    expect(voteSkip(m, 'tg-3', L, T + 5000, m.now.id).skipped).toBe(true);
     expect(m.now.id).toBe(entries[1].id);
     expect(m.now.startedAt).toBe(T + 5000);
     expect(m.votes).toEqual([]);
   });
   it('the person who added the song skips it at once', () => {
     const { m } = room(DARA);
-    expect(voteSkip(m, 'tg-1', ['tg-1', 'tg-2', 'tg-3', 'tg-4'], T).skipped).toBe(true);
+    expect(voteSkip(m, 'tg-1', ['tg-1', 'tg-2', 'tg-3', 'tg-4'], T, m.now.id).skipped).toBe(true);
     expect(m.now).toBeNull();
   });
   it('two votes out of four listeners is enough', () => {
     const { m, entries } = room(DARA, DARA);
-    voteSkip(m, 'tg-2', ['tg-1', 'tg-2', 'tg-3', 'tg-4'], T);
-    expect(voteSkip(m, 'tg-3', ['tg-1', 'tg-2', 'tg-3', 'tg-4'], T).skipped).toBe(true);
+    voteSkip(m, 'tg-2', ['tg-1', 'tg-2', 'tg-3', 'tg-4'], T, m.now.id);
+    expect(voteSkip(m, 'tg-3', ['tg-1', 'tg-2', 'tg-3', 'tg-4'], T, m.now.id).skipped).toBe(true);
     expect(m.now.id).toBe(entries[1].id);
   });
   it('re-check after leaving can complete a skip', () => {
     const { m, entries } = room(DARA, DARA);
-    voteSkip(m, 'tg-2', ['tg-1', 'tg-2', 'tg-3', 'tg-4', 'tg-5'], T); // 1 of 3 needed
+    voteSkip(m, 'tg-2', ['tg-1', 'tg-2', 'tg-3', 'tg-4', 'tg-5'], T, m.now.id); // 1 of 3 needed
     expect(recheckVotes(m, ['tg-9', 'tg-3', 'tg-4'], T)).toBe(false); // tg-2 left: vote dropped
     expect(m.votes).toEqual([]);
-    voteSkip(m, 'tg-3', ['tg-1', 'tg-3', 'tg-4', 'tg-5'], T); // 1 of 2
+    voteSkip(m, 'tg-3', ['tg-1', 'tg-3', 'tg-4', 'tg-5'], T, m.now.id); // 1 of 2
     expect(recheckVotes(m, ['tg-1', 'tg-3'], T)).toBe(true); // 1 of 1
     expect(m.now.id).toBe(entries[1].id);
   });
@@ -203,7 +203,7 @@ describe('alarms and listeners', () => {
 describe('what listeners see', () => {
   it('shows the playing song, the queue, votes and position', () => {
     const { m } = room(DARA, SOKHA);
-    voteSkip(m, 'tg-3', ['tg-1', 'tg-2', 'tg-3', 'tg-4', 'tg-5'], T);
+    voteSkip(m, 'tg-3', ['tg-1', 'tg-2', 'tg-3', 'tg-4', 'tg-5'], T, m.now.id);
     const s = publicMusic(m, T + 7000);
     expect(s).toMatchObject({ votes: 1, paused: false, position: 7, serverNow: T + 7000 });
     expect(s.now.addedBy.name).toBe('Dara');
@@ -213,5 +213,24 @@ describe('what listeners see', () => {
     expect(driftSeek(10, 11.4)).toBe(false);
     expect(driftSeek(10, 11.6)).toBe(true);
     expect(driftSeek(12, 10)).toBe(true);
+  });
+});
+
+describe('stale skips', () => {
+  it("a double-click by the adder doesn't also skip the next song", () => {
+    const { m, entries } = room(DARA, SOKHA);
+    const L = ['tg-1', 'tg-2'];
+    expect(voteSkip(m, 'tg-1', L, T, entries[0].id).skipped).toBe(true);
+    expect(voteSkip(m, 'tg-1', L, T, entries[0].id).skipped).toBe(false);
+    expect(m.now.id).toBe(entries[1].id);
+  });
+  it('two votes at once skip only the song they were for', () => {
+    const { m, entries } = room(DARA, DARA, DARA);
+    const L = ['tg-1', 'tg-2', 'tg-3'];
+    voteSkip(m, 'tg-2', L, T, entries[0].id);
+    voteSkip(m, 'tg-3', L, T, entries[0].id); // skips song 1
+    expect(voteSkip(m, 'tg-2', L, T, entries[0].id).skipped).toBe(false); // late duplicate
+    expect(m.now.id).toBe(entries[1].id);
+    expect(m.votes).toEqual([]);
   });
 });

@@ -144,7 +144,7 @@ describe('music room', () => {
     const a = await r.join('tg-1', 'Dara'), b = await r.join('tg-2', 'Sokha'), c = await r.join('tg-3', 'Vanna');
     await r.say(a, { type: 'add', url: LINK(SONG_A) });
     await r.say(a, { type: 'add', url: LINK(SONG_B) });
-    await r.say(b, { type: 'skip' });
+    await r.say(b, { type: 'skip', id: last(b, 'state').music.now.id });
     expect(last(c, 'state').music).toMatchObject({ votes: 1 });
     expect(last(c, 'state').music.now.title).toBe('Song A');
     await r.leave(c); // 2 listeners left, 1 vote is enough
@@ -201,7 +201,7 @@ describe('music room', () => {
 
     env.MUSIC_ANNOUNCE = 'now-playing';
     await r.say(a, { type: 'add', url: LINK(SONG_B) });
-    await r.say(a, { type: 'skip' });
+    await r.say(a, { type: 'skip', id: last(a, 'state').music.now.id });
     const msg = sent.find(s => s.method === 'sendMessage').body;
     expect(msg).toMatchObject({ chat_id: -100, parse_mode: 'HTML', text: '🎵 Now playing: <b>Song B</b> (added by Dara)' });
   });

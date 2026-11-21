@@ -170,7 +170,7 @@ export function createMusicApp(root, { api, token, onExit, WebSocketImpl = globa
   // ---------- controls ----------
   el.unlock.addEventListener('click', startPlayer);
   el.pause.addEventListener('click', () => send({ type: music?.paused ? 'resume' : 'pause' }));
-  el.skip.addEventListener('click', () => send({ type: 'skip' }));
+  el.skip.addEventListener('click', () => { if (music?.now) send({ type: 'skip', id: music.now.id }); });
   el.queue.addEventListener('click', e => { const b = e.target.closest('[data-remove]'); if (b) send({ type: 'remove', id: b.dataset.remove }); });
   el.add.addEventListener('submit', e => {
     e.preventDefault();

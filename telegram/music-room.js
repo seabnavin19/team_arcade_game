@@ -140,7 +140,7 @@ export class MusicRoom {
       case 'remove': if (!removeSong(m, String(msg.id), me.key).ok) return; break;
       case 'pause': pause(m, now, { manual: true }); break;
       case 'resume': resume(m, now); break;
-      case 'skip': voteSkip(m, me.key, keys(), now); break;
+      case 'skip': voteSkip(m, me.key, keys(), now, String(msg.id)); break;
       case 'duration': {
         const r = setDuration(m, String(msg.id), msg.seconds);
         if (!r.changed) return;

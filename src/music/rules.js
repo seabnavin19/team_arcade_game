@@ -91,8 +91,10 @@ export function advance(m, nowMs) {
 
 export const neededVotes = listenerCount => Math.max(1, Math.ceil(listenerCount / 2));
 
-export function voteSkip(m, userKey, listenerKeys, nowMs) {
-  if (!m.now) return { skipped: false, votes: 0, needed: neededVotes(listenerKeys.length) };
+/** A skip (or vote) for song `entryId`. Ignored if that song is no longer playing, so
+    a double-click or two votes at once never skip the next song too. */
+export function voteSkip(m, userKey, listenerKeys, nowMs, entryId) {
+  if (!m.now || m.now.id !== entryId) return { skipped: false, votes: m.votes.length, needed: neededVotes(listenerKeys.length) };
   if (m.now.addedBy.key === userKey) { advance(m, nowMs); return { skipped: true, votes: 0, needed: 0 }; }
   if (!m.votes.includes(userKey)) m.votes.push(userKey);
   return check(m, listenerKeys, nowMs);
