@@ -1,0 +1,43 @@
+{
+ "chat": -969993867,
+ "week": "2026-W48",
+ "games": {
+  "shooter": {
+   "game": "shooter",
+   "week": "2026-W48",
+   "entries": {
+    "tg-1869188761": {
+     "name": "Navin S.",
+     "score": 18400,
+     "at": "2026-11-24T13:06:55.031Z",
+     "meta": {
+      "won": false,
+      "wave": 5,
+      "kills": 81,
+      "lives": 0
+     }
+    }
+   }
+  },
+  "reaction": {
+   "game": "reaction",
+   "week": "2026-W48",
+   "entries": {}
+  },
+  "memory": {
+   "game": "memory",
+   "week": "2026-W48",
+   "entries": {}
+  },
+  "brain": {
+   "game": "brain",
+   "week": "2026-W48",
+   "entries": {}
+  },
+  "typing": {
+   "game": "typing",
+   "week": "2026-W48",
+   "entries": {}
+  }
+ }
+}
