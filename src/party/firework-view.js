@@ -151,6 +151,7 @@ export function createFireworkView({ ctx, panel, input, send, serverNow, getPart
       paintStars();
     }
     const drawingNow = m.phase === 'draw';
+    if (drawingNow && m.of > 0 && m.ready.length === m.of && !dirty && !live) el.drawnote.textContent = m.of === 1 ? 'Launching your firework… 🎆' : 'Everyone is ready! The show starts now 🎆';
     el.drawbar.hidden = !drawingNow;
     el.ratebar.hidden = m.phase !== 'show';
   }

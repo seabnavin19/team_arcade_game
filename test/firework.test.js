@@ -99,3 +99,30 @@ describe('firework GIF for the Telegram group', async () => {
     expect(renderFireworkGif([], {})).toBeNull();
   });
 });
+
+describe('firework show starts early', () => {
+  it('starts the show as soon as every player has launched a drawing', () => {
+    const sim = show(2);
+    submit(sim, 'p0', heart, START + 5000);
+    step(sim, START + 9000);
+    expect(sim.phase).toBe('draw'); // p1 is still drawing
+    submit(sim, 'p1', heart, START + 10000);
+    step(sim, START + 10100);
+    expect(sim.phase).toBe('draw'); // a short beat first
+    step(sim, START + 11700);
+    expect(sim.phase).toBe('show');
+    expect(sim.events).toEqual([expect.objectContaining({ e: 'show', i: 0, n: 2 })]);
+  });
+  it('a player clearing their drawing (or someone new joining) holds the start', () => {
+    const sim = show(1);
+    submit(sim, 'p0', heart, START + 5000);
+    step(sim, START + 5100);
+    addSparker(sim, 'p9', 'Late');
+    step(sim, START + 7000);
+    expect(sim.phase).toBe('draw');
+    submit(sim, 'p9', heart, START + 8000);
+    submit(sim, 'p0', [], START + 8100);
+    step(sim, START + 8200); step(sim, START + 9900);
+    expect(sim.phase).toBe('draw');
+  });
+});

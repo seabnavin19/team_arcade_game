@@ -11,6 +11,7 @@
 import { createRng } from '../core/rng.js';
 
 export const DRAW_SECONDS = 50, SUBMIT_GRACE_MS = 1500, SHOW_MS = 9000;
+export const ALL_READY_MS = 1500; // once every player has launched their drawing, the show starts this soon
 export const MAX_PLAYERS = 10, MAX_POINTS = 1600, MAX_STROKES = 120;
 export const SHOW_SECONDS = DRAW_SECONDS + Math.ceil((SUBMIT_GRACE_MS + MAX_PLAYERS * SHOW_MS) / 1000) + 5;
 export const TICK_MS = 250;
@@ -89,6 +90,14 @@ export function step(sim, now) {
   sim.lastNow = now;
   sim.events = sim.pending; sim.pending = [];
   if (sim.over) return;
+  // Everyone has launched their drawing? Then the show starts now (after a short beat).
+  if (sim.phase === 'draw') {
+    const n = Object.keys(sim.players).length;
+    const allReady = n > 0 && Object.keys(sim.players).every(k => sim.art[k]);
+    if (!allReady) sim.allReadyAt = 0;
+    else if (!sim.allReadyAt) sim.allReadyAt = now;
+    else if (now >= sim.allReadyAt + ALL_READY_MS && now < sim.drawEnd) sim.drawEnd = now - SUBMIT_GRACE_MS;
+  }
   if (sim.phase === 'draw' && now >= sim.drawEnd + SUBMIT_GRACE_MS) {
     const rng = createRng(`show:${sim.seed}`);
     const keys = Object.keys(sim.art).sort();
