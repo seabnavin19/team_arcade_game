@@ -1,7 +1,7 @@
 // The live party screen: lobby → synced Reaction Tap round → results.
 
 import { timelineFor, PARTY_GAMES } from './rules.js';
-import { createBattleView } from './battle-view.js';
+import { createBattleView, battleLayout } from './battle-view.js';
 import { createQuizView } from './quiz-view.js';
 import { createSnakeView } from './snake-view.js';
 import { createDrawView } from './draw-view.js';
@@ -62,7 +62,7 @@ export function createPartyApp(root, { api, token, sound, onExit, WebSocketImpl 
       <section class="ta-party-results" data-results hidden></section>
     </div>`;
   const $ = s => root.querySelector(`[data-${s}]`);
-  const el = { fw: $('fw'), boat: $('boat'), crews: $('crews'), mode: $('mode'), duo: $('duo'), drawtop: $('drawtop'), drawui: $('drawui'), dpad: $('dpad'), canvaswrap: $('canvaswrap'), quiz: $('quiz'), startnow: $('startnow'), note: $('note'), title: $('title'), rules: $('rules'), controls: $('controls'), lobby: $('lobby'), count: $('count'), sub: $('sub'), players: $('players'), game: $('game'), canvas: $('canvas'), overlay: $('overlay'), board: $('board'), results: $('results'), sound: $('sound') };
+  const el = { root: $('ta'), fw: $('fw'), boat: $('boat'), crews: $('crews'), mode: $('mode'), duo: $('duo'), drawtop: $('drawtop'), drawui: $('drawui'), dpad: $('dpad'), canvaswrap: $('canvaswrap'), quiz: $('quiz'), startnow: $('startnow'), note: $('note'), title: $('title'), rules: $('rules'), controls: $('controls'), lobby: $('lobby'), count: $('count'), sub: $('sub'), players: $('players'), game: $('game'), canvas: $('canvas'), overlay: $('overlay'), board: $('board'), results: $('results'), sound: $('sound') };
 
   const renderSound = () => { el.sound.innerHTML = sound.on ? ICONS.sound : ICONS.muted; el.sound.title = sound.on ? 'Sound on' : 'Sound off'; };
   el.sound.addEventListener('click', () => { sound.toggle(); renderSound(); });
@@ -186,7 +186,7 @@ export function createPartyApp(root, { api, token, sound, onExit, WebSocketImpl 
       el.mode.textContent = g.duo ? '💞 Duo Mode' : '⚡ Live party';
       el.rules.textContent = g.pitch;
       el.controls.textContent = p.game === 'battle'
-        ? 'Controls: move with the mouse, arrow keys or WASD. On a phone, drag anywhere to steer.'
+        ? 'Controls: move with the mouse, arrow keys or WASD. On a phone, put your thumb down anywhere and drag: it works like a joystick.'
         : p.game === 'quiz' ? 'Controls: tap an answer, or press 1–4. You get one try per puzzle.'
         : p.game === 'snake' ? 'Controls: arrow keys or WASD. On a phone, swipe on the board or use the arrow buttons.'
         : p.game === 'draw' ? 'When it’s your turn, draw with your mouse or finger. Otherwise type your guesses. 3 rounds, and players take turns drawing.'
@@ -206,7 +206,7 @@ export function createPartyApp(root, { api, token, sound, onExit, WebSocketImpl 
       if (p.game === 'boat' && !boatView) boatView = createBoatView({ ctx, panel: el.boat, input, send, serverNow, getParty: () => party, getMe: () => me, sound, parts, floats });
       if (p.game === 'market' && !marketView) marketView = createMarketView(el.duo, { send, serverNow, getMe: () => me, getParty: () => party, sound });
       if (p.game === 'quiz' && !quizView) quizView = createQuizView(el.quiz, { send, serverNow, getMe: () => me, sound, input });
-      if (p.game === 'battle' && !battle) battle = createBattleView({ ctx, input, send, serverNow, getParty: () => party, getMe: () => me, color, sound, parts, floats });
+      if (p.game === 'battle' && !battle) battle = createBattleView({ ctx, input, send, serverNow, getParty: () => party, getMe: () => me, color, sound, parts, view: battleView, rtt: () => bestRtt });
       el.drawtop.hidden = el.drawui.hidden = p.game !== 'draw';
       if (p.game === 'draw' && !drawView) drawView = createDrawView({ ctx, top: el.drawtop, ui: el.drawui, input, send, serverNow, getMe: () => me, sound });
       if (p.game === 'snake' && !battle) battle = createSnakeView({ ctx, input, send, serverNow, getParty: () => party, getMe: () => me, color, sound, parts, floats, dpad: el.dpad });
@@ -224,6 +224,8 @@ export function createPartyApp(root, { api, token, sound, onExit, WebSocketImpl 
     const status = fatal ? 'error' : party?.status || 'connecting';
     el.lobby.hidden = !(status === 'lobby' || status === 'connecting');
     el.game.hidden = status !== 'running';
+    const live = status === 'running' && party?.game === 'battle';
+    if (el.root.classList.contains('is-live-battle') !== live) { el.root.classList.toggle('is-live-battle', live); fitBattle(); }
     el.results.hidden = !(status === 'done' || status === 'cancelled' || status === 'error');
 
     if (party) {
@@ -311,6 +313,25 @@ export function createPartyApp(root, { api, token, sound, onExit, WebSocketImpl 
     const c = el.canvas.getContext('2d'); c.setTransform(dpr, 0, 0, dpr, 0, 0); return c;
   })();
   const input = createInput(el.canvas, { width: W, height: H, captureAllKeys: false });
+
+  // Ship Battle fills the screen: the canvas is sized to the space left over,
+  // and on an upright phone the arena is turned sideways (see battle-view.js).
+  const battleView = { portrait: false, sw: W, sh: H, css: 1 };
+  function fitBattle() {
+    if (!el.root.classList.contains('is-live-battle')) return;
+    const bw = el.canvaswrap.clientWidth, bh = el.canvaswrap.clientHeight;
+    if (!bw || !bh) return;
+    Object.assign(battleView, battleLayout(bw, bh));
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    const cw = Math.floor(battleView.sw * battleView.css), ch = Math.floor(battleView.sh * battleView.css);
+    el.canvas.style.width = `${cw}px`; el.canvas.style.height = `${ch}px`;
+    const pw = Math.round(cw * dpr), ph = Math.round(ch * dpr);
+    if (el.canvas.width !== pw || el.canvas.height !== ph) { el.canvas.width = pw; el.canvas.height = ph; }
+  }
+  let resizeObs = null;
+  try { resizeObs = new ResizeObserver(fitBattle); resizeObs.observe(el.canvaswrap); } catch { /* old browser */ }
+  window.addEventListener('resize', fitBattle);
+  window.addEventListener('orientationchange', fitBattle);
   let battle = null;
   let quizView = null;
   let boatView = null;
@@ -383,7 +404,10 @@ export function createPartyApp(root, { api, token, sound, onExit, WebSocketImpl 
     },
   });
 
-  function exit() { closed = true; loop.stop(); input.destroy(); try { ws?.close(); } catch { /* ignore */ } onExit?.(); }
+  function exit() {
+    closed = true; loop.stop(); input.destroy();
+    resizeObs?.disconnect(); window.removeEventListener('resize', fitBattle); window.removeEventListener('orientationchange', fitBattle); try { ws?.close(); } catch { /* ignore */ } onExit?.();
+  }
 
   loop.start();
   connect();

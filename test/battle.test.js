@@ -88,3 +88,27 @@ describe('ship battle', () => {
     console.log('random 8-player round, total KOs:', total, 'bullets live:', b.bullets.length);
   });
 });
+
+describe('Ship Battle screen layout and steering', () => {
+  it('fills a wide screen and turns the arena sideways on a tall one', async () => {
+    const { battleLayout } = await import('../src/party/battle-view.js');
+    const wide = battleLayout(1200, 700), tall = battleLayout(390, 760);
+    expect(wide.portrait).toBe(false); expect(wide.sw * wide.css).toBeGreaterThan(1100);
+    expect(tall.portrait).toBe(true); expect(tall.sh * tall.css).toBeGreaterThan(700);
+  });
+  it('maps screen taps back to the same arena point in both layouts', async () => {
+    const { battleLayout, toScreen, fromScreen } = await import('../src/party/battle-view.js');
+    for (const view of [battleLayout(1200, 700), battleLayout(390, 760)]) {
+      const { sx, sy } = toScreen(view, 123, 300);
+      const p = fromScreen(view, sx / view.sw, sy / view.sh);
+      expect(p.x).toBeCloseTo(123); expect(p.y).toBeCloseTo(300);
+    }
+  });
+  it('ships turn smoothly instead of snapping round', () => {
+    const s = { x: 400, y: 300, a: 0 };
+    moveShip(s, -1, 0, 1 / 60, []);
+    expect(Math.abs(s.a)).toBeGreaterThan(0); expect(Math.abs(s.a)).toBeLessThan(0.5);
+    for (let i = 0; i < 30; i++) moveShip(s, -1, 0, 1 / 60, []);
+    expect(Math.abs(s.a)).toBeCloseTo(Math.PI);
+  });
+});

@@ -69,7 +69,9 @@ As soon as 2 players are in, anyone in the lobby can tap **▶ Start now**. Ever
 - 3 hits knock a ship out (KO). It respawns 2 seconds later with a short spawn shield.
 - Pickups appear every 12 seconds: **+** refills your shields, **R** gives 6 seconds of rapid fire.
 - **Most KOs wins.** Ties go to whoever was knocked out fewer times.
-- Controls: mouse (the ship flies toward the cursor), arrow keys / WASD, or drag anywhere on a phone.
+- Controls: mouse (the ship flies toward the cursor), arrow keys / WASD, or on a phone put your thumb down anywhere and drag like a joystick.
+- The arena fills the screen. On a phone held upright it turns sideways so it uses the whole tall screen.
+- Try it locally with bot ships and pretend lag: `node dev/battle-demo.mjs`, then open `dist/battle-demo.html?lag=200`.
 
 **🎨 Draw & Guess** (3 rounds of 50 seconds; 2–12 players)
 - Players take turns as the artist, in a random order. With 2 players that's A, B, then A again; with more than 3 players, three different people draw. Only the artist sees the secret word (cat, coffee, tuk tuk…) and draws it, and everyone sees the drawing appear live.

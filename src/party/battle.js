@@ -11,7 +11,7 @@ import { createRng } from '../core/rng.js';
 export const W = 800, H = 480, TOP = 60;   // arena below the HUD bar
 export const DURATION = 90;                // seconds
 export const MAX_PLAYERS = 8;
-export const SHIP_R = 14, SPEED = 210, MAX_HP = 3;
+export const SHIP_R = 14, SPEED = 210, MAX_HP = 3, TURN_RATE = 14; // radians per second
 export const BULLET_SPEED = 430, BULLET_LIFE = 1.15, FIRE_EVERY = 0.38, RAPID_EVERY = 0.17, RAPID_SECONDS = 6;
 export const RESPAWN_AFTER = 2, SPAWN_SHIELD = 2;
 export const PICKUP_EVERY = 12;
@@ -48,7 +48,15 @@ export function moveShip(ship, mx, my, dt, blocks) {
     const k = Math.min(1, len);
     ship.x += (mx / len) * SPEED * k * dt;
     ship.y += (my / len) * SPEED * k * dt;
-    ship.a = Math.atan2(my, mx);
+    // Turn smoothly toward where you're going instead of snapping, so the nose
+    // (and your aim) doesn't jitter when you make tiny corrections.
+    if (len > 0.2) {
+      let d = Math.atan2(my, mx) - (ship.a || 0);
+      while (d > Math.PI) d -= 2 * Math.PI;
+      while (d < -Math.PI) d += 2 * Math.PI;
+      const turn = TURN_RATE * dt;
+      ship.a = Math.abs(d) <= turn ? Math.atan2(my, mx) : (ship.a || 0) + Math.sign(d) * turn;
+    }
   }
   ship.x = Math.max(SHIP_R, Math.min(W - SHIP_R, ship.x));
   ship.y = Math.max(TOP + SHIP_R, Math.min(H - SHIP_R, ship.y));

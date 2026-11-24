@@ -9,9 +9,12 @@ export function createInput(canvas, { width, height, onEscape, captureAllKeys = 
   const listeners = { pointerdown: [], pointermove: [], pointerup: [], keydown: [] };
   const pointer = { x: width / 2, y: height / 2, inside: false };
 
+  // map(u, v) turns a 0–1 position on the canvas into game coordinates.
+  // A game can swap it (e.g. Ship Battle turns the arena sideways on phones).
+  let map = (u, v) => ({ x: u * width, y: v * height });
   const toLogical = e => {
     const r = canvas.getBoundingClientRect();
-    return { x: ((e.clientX - r.left) / r.width) * width, y: ((e.clientY - r.top) / r.height) * height };
+    return map((e.clientX - r.left) / r.width, (e.clientY - r.top) / r.height);
   };
   const onDown = e => {
     e.preventDefault();
@@ -51,6 +54,7 @@ export function createInput(canvas, { width, height, onEscape, captureAllKeys = 
   return {
     keys, pointer,
     on(type, f) { listeners[type].push(f); },
+    setMap(f) { map = f || ((u, v) => ({ x: u * width, y: v * height })); },
     destroy() {
       canvas.removeEventListener('pointerdown', onDown);
       canvas.removeEventListener('pointermove', onMove);
