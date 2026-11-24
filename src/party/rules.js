@@ -11,7 +11,7 @@ import { MAX_SECONDS as RACE_SECONDS, MAX_PLAYERS as RACE_MAX } from './boat.js'
 import { SHOW_SECONDS, MAX_PLAYERS as SHOW_MAX } from './firework.js';
 
 export const JOIN_SECONDS = 60;      // lobby length after /party
-export const MIN_PLAYERS = 2;        // fewer than this → cancelled
+export const MIN_PLAYERS = 2;        // fewer than this → cancelled (a game can set its own minPlayers)
 export const LATE_JOIN_CUTOFF = 10;  // can't join in the last 10 seconds
 export const PARTY_SECONDS = DURATION;
 
@@ -22,8 +22,8 @@ export const PARTY_GAMES = {
     pitch: '8 quick IQ puzzles: number patterns, maths, time and logic. Everyone gets the same puzzle at the same moment. Right answers score more the faster you are, plus a bonus for the first correct answer. One try per puzzle!' },
   boat: { title: 'Water Festival Boat Race', emoji: '🚣', seconds: RACE_SECONDS, maxPlayers: RACE_MAX,
     pitch: 'A Bon Om Touk dragon boat race on the Tonle Sap. Tap Paddle on the drum beat: on-beat strokes push your boat, and a crew that strokes together gets a sync boost. With 4 or more players you race in crews; with fewer, everyone races solo. First past the Royal Palace wins!' },
-  firework: { title: 'Firework Show', emoji: '🎆', seconds: SHOW_SECONDS, maxPlayers: SHOW_MAX,
-    pitch: 'Water Festival fireworks you design yourself! Everyone has 50 seconds to draw a firework (a lotus, a naga, a heart, your name… anything). Then each drawing is launched over the Royal Palace and bursts into sparks, with no names shown. Give every firework 1–5 stars. The best-rated firework wins.' },
+  firework: { title: 'Firework Show', emoji: '🎆', seconds: SHOW_SECONDS, maxPlayers: SHOW_MAX, minPlayers: 1,
+    pitch: 'Water Festival fireworks you design yourself! Everyone has 50 seconds to draw a firework (a lotus, a naga, a heart, your name… anything). Then each drawing is launched over the Royal Palace and bursts into sparks, with no names shown. Give every firework 1–5 stars. The best-rated firework wins. Alone? Start it anyway: your firework still goes to the group as a GIF.' },
   draw: { title: 'Draw & Guess', emoji: '🎨', seconds: 300, maxPlayers: 12,
     pitch: '3 rounds. Take turns drawing a secret word while everyone else guesses. Quick correct guesses score more, and the artist scores for every player who gets it.' },
   snake: { title: 'Snake Arena', emoji: '🐍', seconds: 90, maxPlayers: 8,
@@ -94,11 +94,14 @@ export function miss(p, userKey) {
 
 export const START_NOW_SECONDS = 3; // countdown after someone taps "Start now"
 
+/** Fewest players this party's game can start with. */
+export const minPlayersFor = p => PARTY_GAMES[p?.game]?.minPlayers ?? MIN_PLAYERS;
+
 /** A player in the lobby asks to start early. Needs enough players. */
 export function startNow(p, userKey, now) {
   if (!p || p.status !== 'lobby') return { ok: false, reason: 'The party is not in the lobby.' };
   if (!p.players[userKey]) return { ok: false, reason: 'Join the party first.' };
-  if (Object.keys(p.players).length < MIN_PLAYERS) return { ok: false, reason: `Needs at least ${MIN_PLAYERS} players.` };
+  if (Object.keys(p.players).length < minPlayersFor(p)) return { ok: false, reason: `Needs at least ${minPlayersFor(p)} players.` };
   const startAt = now + START_NOW_SECONDS * 1000;
   if (startAt >= p.startAt) return { ok: false, reason: 'Already starting.' };
   const length = p.endAt - p.startAt;
@@ -111,7 +114,7 @@ export function startNow(p, userKey, now) {
 /** Called when the lobby ends. */
 export function start(p) {
   if (p.status !== 'lobby') return p.status;
-  p.status = Object.keys(p.players).length >= MIN_PLAYERS ? 'running' : 'cancelled';
+  p.status = Object.keys(p.players).length >= minPlayersFor(p) ? 'running' : 'cancelled';
   return p.status;
 }
 
@@ -130,6 +133,6 @@ export function results(p) {
 
 /** What clients are allowed to see. */
 export const publicState = p => p && ({
-  id: p.id, game: p.game || 'reaction', duo: isDuo(p), summary: p.summary || null, status: p.status, seed: p.seed, startAt: p.startAt, endAt: p.endAt, claimed: p.claimed, startedBy: p.startedBy || null,
+  id: p.id, game: p.game || 'reaction', duo: isDuo(p), minPlayers: minPlayersFor(p), summary: p.summary || null, status: p.status, seed: p.seed, startAt: p.startAt, endAt: p.endAt, claimed: p.claimed, startedBy: p.startedBy || null,
   players: results(p).map(({ key, name, score, hits, fakes, kos, downs, place, crew }) => ({ key, name, score, hits, fakes, kos, downs, place, crew })),
 });

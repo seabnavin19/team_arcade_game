@@ -54,12 +54,13 @@ As soon as 2 players are in, anyone in the lobby can tap **▶ Start now**. Ever
 - The bot posts the places, the winning crew, the best paddler and the best-synced crew.
 - Controls: tap Paddle, tap the river, or press Space.
 
-**🎆 Water Festival Firework Show** (draw 50 seconds, then about 9 seconds per firework; 2–10 players)
+**🎆 Water Festival Firework Show** (draw 50 seconds, then about 9 seconds per firework; 1–10 players)
 - **Draw:** everyone draws their own firework at the same time on a night sky: a lotus, a naga, a heart, their name… anything. 8 glowing colours, Undo and Clear.
   Tap **Launch it** when you're happy. You can keep drawing and update it until time's up, and it's sent anyway when the time runs out.
 - **Show:** the fireworks are launched one by one over the Royal Palace, in a random order and **without names**. Each rocket rises, bursts, and the sparks fly out to form the drawing, glitter, then fall into the river.
 - **Rate:** while a firework glows, everyone else gives it **1–5 stars** (you can change your rating until the next launch). You can't rate your own.
   The artist and their average are revealed when the next firework goes up.
+- **Alone?** Start it anyway (Start now works with one player): you draw, watch your firework, and the GIF goes to the group.
 - **Highest average rating wins.** The bot posts every firework's stars, the crowd favourite, the most generous critic, and who didn't draw.
 - Drawings are checked on the server (colours, size, up to 1,600 points each) and only sent out when their turn comes.
 

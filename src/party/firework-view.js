@@ -93,8 +93,10 @@ export function createFireworkView({ ctx, panel, input, send, serverNow, getPart
   function paintStars() {
     const mine = myStars[snap?.i] || 0, own = snap?.artist === getMe();
     el.stars.querySelectorAll('button').forEach(b => { b.classList.toggle('is-on', Number(b.dataset.star) <= mine); b.disabled = own; });
-    el.rateq.textContent = own ? 'This one is yours! 🤫 Act natural…' : `Rate firework ${snap.i + 1} of ${snap.n}`;
-    el.ratenote.textContent = `${snap.votes} of ${Math.max(0, snap.of - 1)} rated${mine ? ` · you gave ${mine} ★ (tap to change)` : ''}`;
+    const solo = snap.of <= 1;
+    el.stars.hidden = solo;
+    el.rateq.textContent = solo ? 'Your solo firework show 🎆' : own ? 'This one is yours! 🤫 Act natural…' : `Rate firework ${snap.i + 1} of ${snap.n}`;
+    el.ratenote.textContent = solo ? 'Sit back and enjoy. It goes to the group as a GIF when it ends.' : `${snap.votes} of ${Math.max(0, snap.of - 1)} rated${mine ? ` · you gave ${mine} ★ (tap to change)` : ''}`;
   }
 
   // ---------- show particles ----------

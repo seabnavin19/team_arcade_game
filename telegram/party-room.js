@@ -2,7 +2,7 @@
 // Players connect with WebSockets; alarms start and end the round; the room
 // posts the lobby, a cancel notice, and the results in the group.
 
-import { createParty, join, hit, miss, start, startNow, finish, timelineFor, publicState, isActive, isDuo, MIN_PLAYERS, PARTY_SECONDS, PARTY_GAMES } from '../src/party/rules.js';
+import { createParty, join, hit, miss, start, startNow, finish, timelineFor, publicState, isActive, isDuo, MIN_PLAYERS, minPlayersFor, PARTY_SECONDS, PARTY_GAMES } from '../src/party/rules.js';
 import { createBattle, addShip, setInput, step as stepBattle, snapshot as battleSnapshot, battleStats } from '../src/party/battle.js';
 import { createSnakeGame, addSnake, setDir, step as stepSnake, snapshot as snakeSnapshot, snakeStats, TICK_MS as SNAKE_TICK_MS } from '../src/party/snake.js';
 
@@ -456,7 +456,7 @@ export class PartyRoom {
         }
         await this.tg('sendMessage', {
           chat_id: p.chat, parse_mode: 'HTML',
-          text: `⚡ Party cancelled: ${names.length ? `only <b>${esc(names[0])}</b> joined` : 'nobody joined'}. It needs at least ${MIN_PLAYERS} players.\nTry /party again when more people are on a break.`,
+          text: `⚡ Party cancelled: ${names.length ? `only <b>${esc(names[0])}</b> joined` : 'nobody joined'}. It needs at least ${minPlayersFor(p)} players.\nTry /party again when more people are on a break.`,
         });
       }
     } else if (p.status === 'running') {
@@ -530,7 +530,7 @@ PartyRoom.prototype.fireworkEvents = function fireworkEvents(sim) {
   for (const e of sim.events) {
     if (e.e === 'show') this.requestFireworkGif(sim, e.i);
     if (e.e === 'rated') {
-      const job = { ...e, total: sim.order.length };
+      const job = { ...e, total: sim.order.length, solo: Object.keys(sim.players).length <= 1 };
       this.fwChain = (this.fwChain || Promise.resolve()).then(() => this.postFirework(job)).catch(err => console.log('firework gif', err.message));
     }
   }
@@ -560,8 +560,8 @@ PartyRoom.prototype.postFirework = async function postFirework(job) {
   if (!p) return;
   for (let waited = 0; !this.fwGifs?.[job.i] && waited < GIF_WAIT_MS && this.fwAsk?.[job.i]; waited += 250) await new Promise(r => setTimeout(r, 250));
   const caption = [
-    `🎆 <b>Firework ${job.i + 1} of ${job.total}</b> · by <b>${esc(job.name)}</b>`,
-    job.n ? `${starLine(job.avg)} ${job.avg.toFixed(1)} from ${job.n} ${job.n === 1 ? 'rating' : 'ratings'}` : 'No ratings',
+    job.total === 1 ? `🎆 <b>A firework</b> by <b>${esc(job.name)}</b>` : `🎆 <b>Firework ${job.i + 1} of ${job.total}</b> · by <b>${esc(job.name)}</b>`,
+    job.solo ? 'Solo show for the Water Festival! Want ratings? Play /party fireworks together.' : job.n ? `${starLine(job.avg)} ${job.avg.toFixed(1)} from ${job.n} ${job.n === 1 ? 'rating' : 'ratings'}` : 'No ratings',
   ].join('\n');
   const gif = this.fwGifs?.[job.i];
   if (gif) {
@@ -593,6 +593,10 @@ PartyRoom.prototype.tgFile = async function tgFile(method, fields, fileField, by
 // Firework Show results: the drawings ranked by their average stars.
 PartyRoom.prototype.postShowResults = async function postShowResults(p) {
   const s = p.summary || { ranked: [], noArt: [] };
+  if (Object.keys(p.players).length <= 1) { // a solo show: the GIF says it all
+    if (!s.drew) await this.tg('sendMessage', { chat_id: p.chat, parse_mode: 'HTML', text: '🎆 The firework show ended without a drawing. Try again: /party fireworks' });
+    return;
+  }
   const stars = a => `${'★'.repeat(Math.round(a))}${'☆'.repeat(5 - Math.round(a))}`;
   let place = 0;
   const lines = s.ranked.slice(0, 10).map((r, i, arr) => {

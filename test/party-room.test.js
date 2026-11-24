@@ -341,6 +341,32 @@ describe('live party', () => {
     expect(lastText()).toMatch(/Didn't draw: Navin/);
   });
 
+  it('a Firework Show can be played alone: the GIF still goes to the group', async () => {
+    await webhook({ message: { text: '/party fireworks', chat: GROUP, from: { id: 1, first_name: 'Dara' } } });
+    expect(lastText()).toMatch(/Play alone or with up to 10 players/);
+    const r = rooms.get(String(GROUP.id));
+    const w = fakeWs('tg-1', 'Dara');
+    r.sockets.push(w);
+    join(r.obj.party, { key: 'tg-1', name: 'Dara' }, clock);
+    await r.obj.webSocketMessage(w, JSON.stringify({ type: 'start-now' }));
+    clock = r.alarm(); await r.obj.alarm();
+    expect(r.obj.party.status).toBe('running');
+    clearInterval(r.obj.ticker); r.obj.ticker = null;
+    const sim = r.obj.battle;
+    const { step, COLORS } = await import('../src/party/firework.js');
+    const { renderFireworkGif, toBase64 } = await import('../src/party/firework-gif.js');
+    await r.obj.webSocketMessage(w, JSON.stringify({ type: 'fw-submit', strokes: [{ c: COLORS[2], pts: [300, 200, 500, 200] }] }));
+    clock = sim.drawEnd + 2000; step(sim, clock); r.obj.fireworkEvents(sim);
+    const ask = w.inbox.findLast(m => m.type === 'fw-render');
+    await r.obj.webSocketMessage(w, JSON.stringify({ type: 'fw-gif', i: 0, data: toBase64(renderFireworkGif(ask.art, { seed: ask.seed })) }));
+    clock += 9000; step(sim, clock); r.obj.fireworkEvents(sim);
+    const before = sent.length;
+    await r.obj.finishParty();
+    const posted = sent.slice(before);
+    expect(posted.map(m => m.method)).toEqual(['sendAnimation']); // just the GIF, no ranking for one
+    expect(posted[0].body.caption).toMatch(/🎆 <b>A firework<\/b> by <b>Dara<\/b>\nSolo show/);
+  });
+
   it('ping gets the server time back (for clock sync)', async () => {
     await webhook({ message: { text: '/party reaction', chat: GROUP, from: { id: 1, first_name: 'Dara' } } });
     const r = rooms.get(String(GROUP.id));

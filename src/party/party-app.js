@@ -234,8 +234,8 @@ export function createPartyApp(root, { api, token, sound, onExit, WebSocketImpl 
       el.crews.innerHTML = party.game === 'boat' && inLobby ? crewLobbyHtml(party, me, assignCrews) : '';
       const startingSoon = inLobby && party.startedBy;
       el.sub.textContent = party.duo ? `${n} of 2 players in · one team, one score` : `${n} ${n === 1 ? 'player' : 'players'} in · needs at least 2`;
-      el.startnow.hidden = !(inLobby && !startingSoon && n >= 2 && party.players.some(p => p.key === me));
-      el.note.textContent = startingSoon ? `${party.startedBy} started the ${party.duo ? 'game' : 'party'}!` : (inLobby && n < 2 ? (party.duo ? 'Waiting for your partner to tap Join the duo…' : 'Waiting for one more player…') : '');
+      el.startnow.hidden = !(inLobby && !startingSoon && n >= (party.minPlayers || 2) && party.players.some(p => p.key === me));
+      el.note.textContent = startingSoon ? `${party.startedBy} started the ${party.duo ? 'game' : 'party'}!` : (inLobby && n < (party.minPlayers || 2) ? (party.duo ? 'Waiting for your partner to tap Join the duo…' : 'Waiting for one more player…') : '');
       if (party.duo) {
         const team = party.players.map(pl => esc(pl.key === me ? 'You' : pl.name)).join(' ♥ ');
         const sc = party.players[0]?.score || 0;
@@ -281,8 +281,8 @@ export function createPartyApp(root, { api, token, sound, onExit, WebSocketImpl 
       showResults(`
         <div class="ta-result-label">${rows[0] ? `Crowd favourite: ${esc(rows[0].name)}` : 'The show is over'}</div>
         <div class="ta-result-score">${mine ? (MEDALS[mine.place - 1] || `#${mine.place}`) : '🎆'}</div>
-        <div class="ta-result-meta">${mine ? `Your firework: ${mine.avg.toFixed(1)} ★ from ${mine.n} ${mine.n === 1 ? 'rating' : 'ratings'}` : 'You didn’t launch a firework this time.'}</div>
-        <ol class="ta-party-final">${rows.map(r => `<li class="${r === mine ? 'is-me' : ''}"><span>${MEDALS[r.place - 1] || `${r.place}.`}</span><span class="ta-name">${esc(r.name)}</span><span class="ta-score">${stars(r.avg)} ${r.avg.toFixed(1)}</span></li>`).join('')}</ol>
+        <div class="ta-result-meta">${!mine ? 'You didn’t launch a firework this time.' : mine.n ? `Your firework: ${mine.avg.toFixed(1)} ★ from ${mine.n} ${mine.n === 1 ? 'rating' : 'ratings'}` : 'Your firework was sent to the group as a GIF 🎆'}</div>
+        <ol class="ta-party-final">${rows.map(r => `<li class="${r === mine ? 'is-me' : ''}"><span>${MEDALS[r.place - 1] || `${r.place}.`}</span><span class="ta-name">${esc(r.name)}</span><span class="ta-score">${r.n ? `${stars(r.avg)} ${r.avg.toFixed(1)}` : '<span class="ta-muted">no ratings</span>'}</span></li>`).join('')}</ol>
         ${s.fan ? `<p class="ta-result-status">👏 Most generous critic: <b>${esc(s.fan.name)}</b> (${s.fan.given} ratings)</p>` : ''}`);
     } else if (status === 'done') {
       const mine = party.players.find(p => p.key === me);
