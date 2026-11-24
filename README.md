@@ -42,7 +42,7 @@ Telegram group ──/arcade, Play──▶ Cloudflare Worker (telegram/worker.j
 
 ### 🎉 Live party (multiplayer)
 
-Send **`/party`** in the group and pick a game from the buttons, or go straight to one with **`/party boat`**, **`/party draw`**, **`/party battle`**, **`/party snake`**, **`/party iq`** or **`/party reaction`**.
+Send **`/party`** in the group and pick a game from the buttons, or go straight to one with **`/party boat`**, **`/party fireworks`**, **`/party draw`**, **`/party battle`**, **`/party snake`**, **`/party iq`** or **`/party reaction`**.
 The bot posts a card with a **Join the party** button and a 60-second countdown. A party needs at least 2 players, and one party runs per group at a time.
 As soon as 2 players are in, anyone in the lobby can tap **▶ Start now**. Everyone then gets a 3-second countdown instead of waiting out the full minute.
 
@@ -53,6 +53,15 @@ As soon as 2 players are in, anyone in the lobby can tap **▶ Start now**. Ever
 - The drum speeds up on the final stretch. Boats far behind get a small catch-up boost, so races stay close.
 - The bot posts the places, the winning crew, the best paddler and the best-synced crew.
 - Controls: tap Paddle, tap the river, or press Space.
+
+**🎆 Water Festival Firework Show** (draw 50 seconds, then about 9 seconds per firework; 2–10 players)
+- **Draw:** everyone draws their own firework at the same time on a night sky: a lotus, a naga, a heart, their name… anything. 8 glowing colours, Undo and Clear.
+  Tap **Launch it** when you're happy. You can keep drawing and update it until time's up, and it's sent anyway when the time runs out.
+- **Show:** the fireworks are launched one by one over the Royal Palace, in a random order and **without names**. Each rocket rises, bursts, and the sparks fly out to form the drawing, glitter, then fall into the river.
+- **Rate:** while a firework glows, everyone else gives it **1–5 stars** (you can change your rating until the next launch). You can't rate your own.
+  The artist and their average are revealed when the next firework goes up.
+- **Highest average rating wins.** The bot posts every firework's stars, the crowd favourite, the most generous critic, and who didn't draw.
+- Drawings are checked on the server (colours, size, up to 1,600 points each) and only sent out when their turn comes.
 
 **🚀 Ship Battle** (90 seconds, 2–8 players)
 - Everyone flies a ship in one arena with cover blocks. Your ship **fires forward on its own**, so you aim by steering.
@@ -192,6 +201,7 @@ If the last step says it was skipped, open this address once in a browser:
 | Ship Battle balance (speed, fire rate, shields, pickups) | top of `src/party/battle.js` |
 | Snake Arena (speed, board size, points, respawn) | top of `src/party/snake.js` |
 | Boat Race (drum speed, timing windows, sync boost, catch-up, crews) | top of `src/party/boat.js` |
+| Firework Show: drawing time, seconds per firework, colours, drawing ideas, max players | top of `src/party/firework.js` |
 | In Sync: questions, rounds, time per round, points | top of `src/party/sync.js` |
 | Night Market Duo: dishes, cook times, burners, customers, tips | top of `src/party/market.js` |
 | Time of the Monday results post | `crons` in `telegram/wrangler.toml` (UTC) |
@@ -224,12 +234,13 @@ To update the games, upload a new `arcade.js` with the same name. Players get it
 
 ```bash
 npm install
-npm test                       # 202 automated tests: game rules, saving and conflicts, ranking, the Telegram server, live parties, Duo Mode, the music room
+npm test                       # 209 automated tests: game rules, saving and conflicts, ranking, the Telegram server, live parties, Duo Mode, the music room
 npm run build                  # dist/ (Confluence) and site/ (Telegram / GitHub Pages)
 
 node dev/local-telegram.mjs    # Telegram version with a pretend Telegram + GitHub → http://localhost:8787/play?name=Dara
 cd telegram && npx wrangler dev # the real Worker locally, with live party rooms (put secrets in telegram/.dev.vars)
 python3 -m http.server 8765    # Confluence version on a pretend Confluence → http://localhost:8765/dev/harness.html?user=dara
+node dev/firework-demo.mjs     # Firework Show with bot players → open dist/firework-demo.html (?draw=20 for a shorter drawing time)
 node dev/duo-demo.mjs          # Duo Mode with a bot partner → open dist/duo-demo.html?game=sync (or ?game=market)
 ```
 

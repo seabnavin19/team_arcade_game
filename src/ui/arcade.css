@@ -333,3 +333,24 @@ body.ta-fullpage #team-arcade .ta { max-width: 1040px; margin: 0 auto; border: 0
 #team-arcade .ta .ta-boat-crew em { font-style: normal; font-size: 11.5px; color: var(--muted); }
 #team-arcade .ta .ta-boat-crew.is-mine { border-color: var(--c); box-shadow: 0 0 0 1px var(--c); }
 #team-arcade .ta-boat-solo { color: var(--muted); font-size: 13px; margin: 4px auto 12px; max-width: 520px; }
+
+/* Water Festival Firework Show */
+#team-arcade .ta-fw[hidden], #team-arcade .ta-fw [hidden] { display: none; }
+#team-arcade .ta-fw { max-width: 960px; margin: 10px auto 0; }
+#team-arcade .ta-fw-idea { font-size: 13px; color: var(--muted); margin-bottom: 8px; }
+#team-arcade .ta-fw-idea b { color: var(--yellow); }
+#team-arcade .ta-fw-tools { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+#team-arcade .ta-fw-colors { display: flex; gap: 6px; flex-wrap: wrap; margin-right: auto; }
+#team-arcade .ta .ta-fw-color { all: unset; cursor: pointer; width: 30px; height: 30px; border-radius: 50%; background: var(--c); box-shadow: 0 0 10px var(--c); border: 3px solid transparent; box-sizing: border-box; }
+#team-arcade .ta .ta-fw-color.is-on { border-color: #fff; transform: scale(1.12); }
+#team-arcade .ta .ta-fw-send { background: var(--magenta); color: #fff; }
+#team-arcade .ta-fw-note { margin-top: 6px; font-size: 12.5px; color: var(--muted); font-family: var(--mono); }
+#team-arcade .ta-fw-rate { text-align: center; }
+#team-arcade .ta-fw-q { font-weight: 800; font-size: 17px; }
+#team-arcade .ta-fw-stars { display: flex; justify-content: center; gap: 6px; margin-top: 6px; }
+#team-arcade .ta .ta-fw-stars button { all: unset; cursor: pointer; font-size: 44px; line-height: 1; color: #3b3760; transition: transform .1s, color .1s; touch-action: manipulation; }
+#team-arcade .ta .ta-fw-stars button.is-on { color: var(--yellow); text-shadow: 0 0 14px rgba(255,210,63,.7); }
+#team-arcade .ta .ta-fw-stars button:active { transform: scale(.9); }
+#team-arcade .ta .ta-fw-stars button:disabled { cursor: default; opacity: .4; }
+#team-arcade .ta-fw-reveal { margin-top: 8px; font-size: 14px; color: var(--text); min-height: 1.2em; }
+#team-arcade .ta-fw-reveal span { color: #3b3760; }

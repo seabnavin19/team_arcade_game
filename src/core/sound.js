@@ -36,6 +36,8 @@ export function createSound(storage = globalThis.localStorage) {
     miss: () => tone(220, 0.05, 'triangle', 0.04),
     tick: () => tone(520, 0.05, 'sine', 0.05),
     go: () => tone(990, 0.15, 'square', 0.05),
+    boom: (big = false) => { tone(big ? 70 : 110, big ? 0.5 : 0.28, 'sawtooth', 0.07, -50); tone(big ? 1400 : 1800, 0.12, 'triangle', 0.025, -600); },
+    fizz: () => tone(300, 0.25, 'sawtooth', 0.035, -220),
     end: () => { tone(660, 0.1); setTimeout(() => tone(880, 0.16), 110); },
   };
 }

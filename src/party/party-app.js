@@ -10,6 +10,7 @@ import { createSyncView } from './sync-view.js';
 import { createMarketView } from './market-view.js';
 import { createBoatView, crewLobbyHtml } from './boat-view.js';
 import { assignCrews } from './boat.js';
+import { createFireworkView } from './firework-view.js';
 import { ROUNDS as SYNC_ROUNDS } from './sync.js';
 import { radiusAt, W, H, DURATION } from '../games/reaction.js';
 import { createLoop } from '../core/loop.js';
@@ -45,6 +46,7 @@ export function createPartyApp(root, { api, token, sound, onExit, WebSocketImpl 
         <div class="ta-draw-top" data-drawtop hidden></div>
         <div class="ta-canvas-wrap" data-canvaswrap><canvas data-canvas tabindex="0"></canvas><div class="ta-overlay" data-overlay></div></div>
         <div class="ta-boat" data-boat hidden></div>
+        <div class="ta-fw" data-fw hidden></div>
         <div class="ta-quiz" data-quiz hidden></div>
         <div class="ta-quiz ta-duo" data-duo hidden></div>
         <div class="ta-draw-ui" data-drawui hidden></div>
@@ -60,7 +62,7 @@ export function createPartyApp(root, { api, token, sound, onExit, WebSocketImpl 
       <section class="ta-party-results" data-results hidden></section>
     </div>`;
   const $ = s => root.querySelector(`[data-${s}]`);
-  const el = { boat: $('boat'), crews: $('crews'), mode: $('mode'), duo: $('duo'), drawtop: $('drawtop'), drawui: $('drawui'), dpad: $('dpad'), canvaswrap: $('canvaswrap'), quiz: $('quiz'), startnow: $('startnow'), note: $('note'), title: $('title'), rules: $('rules'), controls: $('controls'), lobby: $('lobby'), count: $('count'), sub: $('sub'), players: $('players'), game: $('game'), canvas: $('canvas'), overlay: $('overlay'), board: $('board'), results: $('results'), sound: $('sound') };
+  const el = { fw: $('fw'), boat: $('boat'), crews: $('crews'), mode: $('mode'), duo: $('duo'), drawtop: $('drawtop'), drawui: $('drawui'), dpad: $('dpad'), canvaswrap: $('canvaswrap'), quiz: $('quiz'), startnow: $('startnow'), note: $('note'), title: $('title'), rules: $('rules'), controls: $('controls'), lobby: $('lobby'), count: $('count'), sub: $('sub'), players: $('players'), game: $('game'), canvas: $('canvas'), overlay: $('overlay'), board: $('board'), results: $('results'), sound: $('sound') };
 
   const renderSound = () => { el.sound.innerHTML = sound.on ? ICONS.sound : ICONS.muted; el.sound.title = sound.on ? 'Sound on' : 'Sound off'; };
   el.sound.addEventListener('click', () => { sound.toggle(); renderSound(); });
@@ -131,7 +133,9 @@ export function createPartyApp(root, { api, token, sound, onExit, WebSocketImpl 
     } else if (m.type === 'notice') {
       el.note.textContent = m.text; el.startnow.disabled = false;
     } else if (m.type === 'paddle-result') { boatView?.onResult(m);
+    } else if (m.type === 'fw-art' || m.type === 'fw-saved' || m.type === 'fw-rated' || m.type === 'fw-render') { fwView?.onMessage(m);
     } else if (m.type === 'snap') {
+      if (fwView) { fwView.onSnap(m); return; }
       if (boatView) { boatView.onSnap(m); return; }
       if (marketView) { marketView.onSnap(m); if (party) party.players.forEach(pl => { pl.score = m.tips; }); if (performance.now() - lastBoard > 400) { lastBoard = performance.now(); render(); } return; }
       battle?.onSnap(m);
@@ -188,6 +192,7 @@ export function createPartyApp(root, { api, token, sound, onExit, WebSocketImpl 
         : p.game === 'draw' ? 'When it’s your turn, draw with your mouse or finger. Otherwise type your guesses. 3 rounds, and players take turns drawing.'
         : p.game === 'sync' ? 'Controls: tap an answer, or press 1–4. Your partner can’t see your pick until the reveal.'
         : p.game === 'boat' ? 'Controls: tap Paddle (or the river, or press Space) on each drum beat. Watch the shrinking ring: tap when it closes.'
+        : p.game === 'firework' ? 'Draw with your mouse or finger and pick colours. Then watch the show and tap 1–5 stars for each firework (not your own).'
         : p.game === 'market' ? 'Cook: tap a dish (or press 1–3) to start it, then tap it when it’s ready. Server: tap a customer to hand them their dish.'
         : 'Controls: click or tap the targets.';
       el.canvaswrap.hidden = p.game === 'quiz' || !!g.duo;
@@ -195,7 +200,9 @@ export function createPartyApp(root, { api, token, sound, onExit, WebSocketImpl 
       el.duo.hidden = !g.duo;
       if (p.game === 'sync' && !syncView) syncView = createSyncView(el.duo, { send, serverNow, getMe: () => me, getParty: () => party, sound, input });
       el.boat.hidden = p.game !== 'boat';
-      el.board.hidden = p.game === 'boat';
+      el.board.hidden = p.game === 'boat' || p.game === 'firework'; // firework ratings stay secret until the end
+      el.fw.hidden = p.game !== 'firework';
+      if (p.game === 'firework' && !fwView) fwView = createFireworkView({ ctx, panel: el.fw, input, send, serverNow, getParty: () => party, getMe: () => me, sound });
       if (p.game === 'boat' && !boatView) boatView = createBoatView({ ctx, panel: el.boat, input, send, serverNow, getParty: () => party, getMe: () => me, sound, parts, floats });
       if (p.game === 'market' && !marketView) marketView = createMarketView(el.duo, { send, serverNow, getMe: () => me, getParty: () => party, sound });
       if (p.game === 'quiz' && !quizView) quizView = createQuizView(el.quiz, { send, serverNow, getMe: () => me, sound, input });
@@ -264,6 +271,19 @@ export function createPartyApp(root, { api, token, sound, onExit, WebSocketImpl 
         <ol class="ta-party-final">${s.boats.map(b => `<li class="${b === myBoat ? 'is-me' : ''}"><span>${MEDALS[b.place - 1] || `${b.place}.`}</span><span class="ta-name">${esc(b.name)}${s.mode === 'crews' ? ` <small class="ta-muted">${esc(b.members.join(', '))}</small>` : ''}</span><span class="ta-score">${time(b)}</span></li>`).join('')}</ol>
         ${s.best ? `<p class="ta-result-status">🏅 Best paddler: <b>${esc(s.best.name)}</b>, ${s.best.pct}% on the beat</p>` : ''}
         ${s.sync ? `<p class="ta-result-status">🥁 Best sync: <b>${esc(s.sync.name)}</b>, ${s.sync.streak} strokes together</p>` : ''}`);
+    } else if (status === 'done' && party.game === 'firework') {
+      const s = party.summary || { ranked: [] };
+      const myName = party.players.find(p => p.key === me)?.name;
+      const stars = a => `${'★'.repeat(Math.round(a))}<span class="ta-muted">${'★'.repeat(5 - Math.round(a))}</span>`;
+      let place = 0;
+      const rows = s.ranked.map((r, i, arr) => { if (i === 0 || r.avg !== arr[i - 1].avg) place = i + 1; return { ...r, place }; });
+      const mine = rows.find(r => r.name === myName);
+      showResults(`
+        <div class="ta-result-label">${rows[0] ? `Crowd favourite: ${esc(rows[0].name)}` : 'The show is over'}</div>
+        <div class="ta-result-score">${mine ? (MEDALS[mine.place - 1] || `#${mine.place}`) : '🎆'}</div>
+        <div class="ta-result-meta">${mine ? `Your firework: ${mine.avg.toFixed(1)} ★ from ${mine.n} ${mine.n === 1 ? 'rating' : 'ratings'}` : 'You didn’t launch a firework this time.'}</div>
+        <ol class="ta-party-final">${rows.map(r => `<li class="${r === mine ? 'is-me' : ''}"><span>${MEDALS[r.place - 1] || `${r.place}.`}</span><span class="ta-name">${esc(r.name)}</span><span class="ta-score">${stars(r.avg)} ${r.avg.toFixed(1)}</span></li>`).join('')}</ol>
+        ${s.fan ? `<p class="ta-result-status">👏 Most generous critic: <b>${esc(s.fan.name)}</b> (${s.fan.given} ratings)</p>` : ''}`);
     } else if (status === 'done') {
       const mine = party.players.find(p => p.key === me);
       showResults(`
@@ -294,6 +314,7 @@ export function createPartyApp(root, { api, token, sound, onExit, WebSocketImpl 
   let battle = null;
   let quizView = null;
   let boatView = null;
+  let fwView = null;
   let drawView = null;
   let syncView = null;
   let marketView = null;
@@ -328,6 +349,7 @@ export function createPartyApp(root, { api, token, sound, onExit, WebSocketImpl 
       if (drawView && party?.status === 'running') drawView.update();
       if (syncView && party?.status === 'running') syncView.update();
       if (marketView && party?.status === 'running') marketView.update();
+      if (fwView && party?.status === 'running') fwView.update(dt);
       if (party?.status === 'lobby') {
         const left = Math.max(0, Math.ceil((party.startAt - serverNow()) / 1000));
         el.count.textContent = left > 0 ? `${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}` : 'GO!';
@@ -338,6 +360,7 @@ export function createPartyApp(root, { api, token, sound, onExit, WebSocketImpl 
       if (party?.status !== 'running') return;
       if (party.game === 'battle' || party.game === 'snake') { battle?.render(); return; }
       if (party.game === 'boat') { boatView?.render(); return; }
+      if (party.game === 'firework') { fwView?.render(); return; }
       if (party.game === 'quiz' || party.duo) return;
       if (party.game === 'draw') { drawView?.render(); return; }
       const t = (serverNow() - party.startAt) / 1000;

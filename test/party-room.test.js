@@ -35,7 +35,10 @@ async function fakeFetch(url, init = {}) {
   const u = new URL(url);
   if (u.hostname === 'api.telegram.org') {
     const method = u.pathname.split('/').pop();
-    sent.push({ method, body: init.body ? JSON.parse(init.body) : {} });
+    const body = init.body instanceof FormData
+      ? Object.fromEntries([...init.body.entries()].map(([k, v]) => [k, typeof v === 'string' ? v : { file: v.name, type: v.type, size: v.size }]))
+      : init.body ? JSON.parse(init.body) : {};
+    sent.push({ method, body });
     const result = method === 'getMe' ? { username: 'TeamArcadeBot' } : method === 'sendGame' ? { message_id: 777 } : true;
     return new Response(JSON.stringify({ ok: true, result }));
   }
@@ -286,6 +289,58 @@ describe('live party', () => {
     expect(lastText()).toMatch(/Best sync: <b>Hanuman<\/b>/);
   });
 
+  it('runs a Firework Show: everyone draws, each firework is shown and rated, results posted', async () => {
+    await webhook({ message: { text: '/party fireworks', chat: GROUP, from: { id: 1, first_name: 'Dara' } } });
+    const r = rooms.get(String(GROUP.id));
+    expect(r.obj.party.game).toBe('firework');
+    const names = ['Dara', 'Sokha', 'Navin'];
+    const ws = names.map((n, i) => fakeWs(`tg-${i + 1}`, n));
+    r.sockets.push(...ws);
+    names.forEach((n, i) => join(r.obj.party, { key: `tg-${i + 1}`, name: n }, clock + i));
+    clock = r.alarm(); await r.obj.alarm();
+    clearInterval(r.obj.ticker); r.obj.ticker = null; // drive the show clock by hand
+    const sim = r.obj.battle;
+    const { step, COLORS } = await import('../src/party/firework.js');
+    const art = [{ c: COLORS[1], pts: [300, 200, 400, 120, 500, 200] }];
+    clock += 5000;
+    await r.obj.webSocketMessage(ws[0], JSON.stringify({ type: 'fw-submit', strokes: art }));
+    await r.obj.webSocketMessage(ws[1], JSON.stringify({ type: 'fw-submit', strokes: art }));
+    expect(ws[0].inbox.at(-1)).toEqual({ type: 'fw-saved', points: 3 });
+    clock = sim.drawEnd + 2000; step(sim, clock);
+    expect(sim.phase).toBe('show');
+    await r.obj.webSocketMessage(ws[2], JSON.stringify({ type: 'fw-art', i: 0 }));
+    expect(ws[2].inbox.at(-1)).toEqual({ type: 'fw-art', i: 0, art });
+    const { renderFireworkGif, toBase64 } = await import('../src/party/firework-gif.js');
+    r.obj.fireworkEvents(sim); // the first launch: the artist's screen is asked for the GIF
+    const stars = { 'tg-1': 5, 'tg-2': 3 };
+    while (!sim.over) {
+      const artist = sim.order[sim.i];
+      const w = ws[Number(artist.slice(3)) - 1];
+      const ask = w.inbox.findLast(m => m.type === 'fw-render');
+      expect(ask).toMatchObject({ i: sim.i, art });
+      const data = toBase64(renderFireworkGif(ask.art, { seed: ask.seed }));
+      await r.obj.webSocketMessage(ws[2], JSON.stringify({ type: 'fw-gif', i: sim.i, data: 'R0lGODlhAQ==' })); // not asked: ignored
+      await r.obj.webSocketMessage(w, JSON.stringify({ type: 'fw-gif', i: sim.i, data }));
+      for (const [i, x] of ws.entries()) if (`tg-${i + 1}` !== artist) await r.obj.webSocketMessage(x, JSON.stringify({ type: 'fw-rate', i: sim.i, stars: stars[artist] }));
+      clock += 9000; step(sim, clock); r.obj.fireworkEvents(sim);
+    }
+    await r.obj.finishParty();
+    const gifs = sent.filter(m => m.method === 'sendAnimation');
+    expect(gifs).toHaveLength(2);
+    expect(gifs[0].body.animation).toMatchObject({ file: 'firework.gif', type: 'image/gif' });
+    expect(gifs[0].body.animation.size).toBeGreaterThan(20000);
+    expect(gifs.map(g => g.body.caption)).toEqual(expect.arrayContaining([
+      expect.stringMatching(/🎆 <b>Firework \d of 2<\/b> · by <b>Dara<\/b>\n★★★★★ 5\.0 from 2 ratings/),
+      expect.stringMatching(/by <b>Sokha<\/b>\n★★★☆☆ 3\.0 from 2 ratings/),
+    ]));
+    expect(sent.findIndex(m => m.method === 'sendAnimation')).toBeLessThan(sent.findLastIndex(m => m.method === 'sendMessage'));
+    expect(r.obj.party.status).toBe('done');
+    expect(lastText()).toMatch(/🎆 <b>Water Festival Firework Show<\/b> · 2 fireworks/);
+    expect(lastText()).toMatch(/🥇 <b>Dara<\/b> · ★★★★★ 5\.0 \(2 ratings\)/);
+    expect(lastText()).toMatch(/🥈 <b>Sokha<\/b> · ★★★☆☆ 3\.0/);
+    expect(lastText()).toMatch(/Didn't draw: Navin/);
+  });
+
   it('ping gets the server time back (for clock sync)', async () => {
     await webhook({ message: { text: '/party reaction', chat: GROUP, from: { id: 1, first_name: 'Dara' } } });
     const r = rooms.get(String(GROUP.id));
@@ -298,7 +353,7 @@ describe('live party', () => {
     await webhook({ message: { text: '/party', chat: GROUP, from: { id: 1, first_name: 'Dara' } } });
     const picker = sent.find(s => s.method === 'sendMessage').body;
     expect(picker.text).toMatch(/Pick a party game/);
-    expect(picker.reply_markup.inline_keyboard.map(row => row[0].callback_data)).toEqual(['party:reaction', 'party:quiz', 'party:boat', 'party:draw', 'party:snake', 'party:battle']);
+    expect(picker.reply_markup.inline_keyboard.map(row => row[0].callback_data)).toEqual(['party:reaction', 'party:quiz', 'party:boat', 'party:firework', 'party:draw', 'party:snake', 'party:battle']);
     sent.length = 0;
     await webhook({ callback_query: { id: 'p1', from: { id: 2, first_name: 'Sokha' }, data: 'party:battle', message: { chat: GROUP, message_id: 50 } } });
     expect(sent.find(s => s.method === 'editMessageText').body.text).toMatch(/Sokha<\/b> picked <b>🚀 Ship Battle/);

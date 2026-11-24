@@ -15,7 +15,20 @@ import { weekKey } from '../src/core/time.js';
 // Real-time party games the room simulates itself, and how.
 import { createRace, addRower, paddle, step as stepRace, snapshot as raceSnapshot, raceStats, raceSummary, isOver as raceOver, TICK_MS as RACE_TICK_MS, CREWS } from '../src/party/boat.js';
 
+import { isGif, fromBase64 } from '../src/party/firework-gif.js';
+import { createShow, addSparker, submit as fwSubmit, rate as fwRate, artFor, step as stepShow, snapshot as showSnapshot, showStats, showSummary, isOver as showOver, TICK_MS as SHOW_TICK_MS } from '../src/party/firework.js';
+
 const LIVE = {
+  // Firework Show: draw, then watch and rate. Drawings go out one at a time, on request.
+  firework: { tickMs: SHOW_TICK_MS, types: ['fw-submit', 'fw-rate', 'fw-art'], create: createShow, add: addSparker, step: stepShow, snapshot: showSnapshot, stats: showStats,
+    summary: showSummary, isOver: showOver, afterStep: (room, sim) => room.fireworkEvents(sim),
+    input: (sim, key, msg, now) => {
+      if (msg.type === 'fw-submit') { const r = fwSubmit(sim, key, msg.strokes, now); return r.kind === 'saved' && { type: 'fw-saved', points: r.points }; }
+      if (msg.type === 'fw-rate') { const r = fwRate(sim, key, Number(msg.i), msg.stars); return r.kind !== 'invalid' && { type: 'fw-rated', ...r }; }
+      const i = Number(msg.i);
+      if (sim.phase === 'show' && i === sim.i) return { type: 'fw-art', i, art: artFor(sim, i) };
+      return null;
+    } },
   boat: { tickMs: RACE_TICK_MS, types: ['paddle'], create: createRace, add: addRower, step: stepRace, snapshot: raceSnapshot, stats: raceStats,
     summary: raceSummary, isOver: raceOver,
     input: (sim, key, msg, now) => { const r = paddle(sim, key, Number(msg.t), now); return r && { type: 'paddle-result', q: r.q }; } },
@@ -141,6 +154,7 @@ export class PartyRoom {
     const p = this.party;
     if (msg.type === 'ping') { ws.send(JSON.stringify({ type: 'pong', c: msg.c, s: this.now() })); return; }
     if (!p) return;
+    if (msg.type === 'fw-gif') { this.fireworkGif(me.key, msg); return; }
     if (LIVE[p.game]?.types.includes(msg.type)) {
       if (p.status === 'running' && this.ensureBattle()) {
         const reply = LIVE[p.game].input(this.battle, me.key, msg, this.now());
@@ -253,6 +267,7 @@ export class PartyRoom {
     this.ticker = setInterval(() => {
       if (!this.battle) return;
       live.step(this.battle, this.now());
+      live.afterStep?.(this, this.battle);
       this.broadcast({ type: 'snap', t: this.now(), ...live.snapshot(this.battle) });
       if (live.isOver?.(this.battle)) { this.finishParty().catch(e => console.log('finish', e.message)); return; }
       if (++n % every2s === 0) { this.copyBattleStats(); this.save(); } // keep scores safe
@@ -467,6 +482,7 @@ export class PartyRoom {
       await this.save();
       this.broadcast(this.stateMsg());
       if (p.game === 'boat') { await this.postRaceResults(p); return; }
+      if (p.game === 'firework') { await this.fireworkPosted(); await this.postShowResults(p); return; }
       const g = PARTY_GAMES[p.game || 'reaction'];
       const detail = r => (p.game === 'battle'
         ? `${r.kos} ${r.kos === 1 ? 'KO' : 'KOs'} · knocked out ${r.downs}×`
@@ -501,6 +517,99 @@ PartyRoom.prototype.postRaceResults = async function postRaceResults(p) {
       s.sync ? `🥁 Best sync: <b>${esc(s.sync.name)}</b>, ${s.sync.streak} perfect strokes together` : '',
       'Rematch? Send /party',
     ].filter(Boolean).join('\n'),
+  });
+};
+
+// ---------- Firework Show: each firework goes to the group as a GIF ----------
+// A player's screen renders the GIF (the artist's if they are here) when the
+// firework launches; when its rating time ends the room posts it to the group.
+const GIF_WAIT_MS = 8000, MAX_GIF_BYTES = 3 * 1024 * 1024;
+const starLine = a => `${'★'.repeat(Math.round(a))}${'☆'.repeat(5 - Math.round(a))}`;
+
+PartyRoom.prototype.fireworkEvents = function fireworkEvents(sim) {
+  for (const e of sim.events) {
+    if (e.e === 'show') this.requestFireworkGif(sim, e.i);
+    if (e.e === 'rated') {
+      const job = { ...e, total: sim.order.length };
+      this.fwChain = (this.fwChain || Promise.resolve()).then(() => this.postFirework(job)).catch(err => console.log('firework gif', err.message));
+    }
+  }
+};
+
+PartyRoom.prototype.requestFireworkGif = function requestFireworkGif(sim, i) {
+  const artist = sim.order[i], art = artFor(sim, i);
+  const sockets = this.ctx.getWebSockets().filter(ws => { try { return !!ws.deserializeAttachment()?.key; } catch { return false; } });
+  const pick = sockets.find(ws => ws.deserializeAttachment().key === artist) || sockets[0];
+  this.fwGifs ||= {};
+  this.fwAsk ||= {};
+  if (!pick || !art) return;
+  this.fwAsk[i] = pick.deserializeAttachment().key;
+  try { pick.send(JSON.stringify({ type: 'fw-render', i, art, seed: `${this.party.seed}:${i}` })); } catch { /* closed */ }
+};
+
+PartyRoom.prototype.fireworkGif = function fireworkGif(key, msg) {
+  const i = Number(msg.i);
+  if (!this.fwAsk || this.fwAsk[i] !== key || this.fwGifs[i] || typeof msg.data !== 'string' || msg.data.length > MAX_GIF_BYTES * 1.4) return;
+  let bytes;
+  try { bytes = fromBase64(msg.data); } catch { return; }
+  if (isGif(bytes) && bytes.length <= MAX_GIF_BYTES) this.fwGifs[i] = bytes;
+};
+
+PartyRoom.prototype.postFirework = async function postFirework(job) {
+  const p = this.party;
+  if (!p) return;
+  for (let waited = 0; !this.fwGifs?.[job.i] && waited < GIF_WAIT_MS && this.fwAsk?.[job.i]; waited += 250) await new Promise(r => setTimeout(r, 250));
+  const caption = [
+    `🎆 <b>Firework ${job.i + 1} of ${job.total}</b> · by <b>${esc(job.name)}</b>`,
+    job.n ? `${starLine(job.avg)} ${job.avg.toFixed(1)} from ${job.n} ${job.n === 1 ? 'rating' : 'ratings'}` : 'No ratings',
+  ].join('\n');
+  const gif = this.fwGifs?.[job.i];
+  if (gif) {
+    const res = await this.tgFile('sendAnimation', { chat_id: p.chat, caption, parse_mode: 'HTML' }, 'animation', gif, 'firework.gif', 'image/gif');
+    delete this.fwGifs[job.i];
+    if (res?.ok !== false) return;
+  }
+  await this.tg('sendMessage', { chat_id: p.chat, parse_mode: 'HTML', text: caption });
+};
+
+// Results wait (a little) for the last fireworks to reach the group first.
+PartyRoom.prototype.fireworkPosted = async function fireworkPosted() {
+  const chain = this.fwChain;
+  this.fwChain = null;
+  if (chain) await Promise.race([chain, new Promise(r => setTimeout(r, GIF_WAIT_MS + 4000))]);
+  this.fwGifs = {}; this.fwAsk = {};
+};
+
+PartyRoom.prototype.tgFile = async function tgFile(method, fields, fileField, bytes, filename, type) {
+  try {
+    const form = new FormData();
+    for (const [k, v] of Object.entries(fields)) form.append(k, String(v));
+    form.append(fileField, new Blob([bytes], { type }), filename);
+    const res = await this.http(`https://api.telegram.org/bot${this.env.BOT_TOKEN}/${method}`, { method: 'POST', body: form });
+    return await res.json();
+  } catch (e) { return { ok: false, description: e.message }; }
+};
+
+// Firework Show results: the drawings ranked by their average stars.
+PartyRoom.prototype.postShowResults = async function postShowResults(p) {
+  const s = p.summary || { ranked: [], noArt: [] };
+  const stars = a => `${'★'.repeat(Math.round(a))}${'☆'.repeat(5 - Math.round(a))}`;
+  let place = 0;
+  const lines = s.ranked.slice(0, 10).map((r, i, arr) => {
+    if (i === 0 || r.avg !== arr[i - 1].avg) place = i + 1;
+    return `${MEDALS[place - 1] || `${place}.`} <b>${esc(r.name)}</b> · ${stars(r.avg)} ${r.avg.toFixed(1)} (${r.n} ${r.n === 1 ? 'rating' : 'ratings'})`;
+  });
+  const win = s.ranked[0];
+  await this.tg('sendMessage', {
+    chat_id: p.chat, parse_mode: 'HTML',
+    text: [
+      `🎆 <b>Water Festival Firework Show</b> · ${s.drew} ${s.drew === 1 ? 'firework' : 'fireworks'}`, '',
+      ...(lines.length ? lines : ['Nobody drew a firework this time. 🌙']), '',
+      win && win.n ? `🎉 <b>${esc(win.name)}</b> made the crowd's favourite firework!` : null,
+      s.fan ? `👏 Most generous critic: <b>${esc(s.fan.name)}</b> rated ${s.fan.given} fireworks` : null,
+      s.noArt.length ? `🙈 Didn't draw: ${s.noArt.map(esc).join(', ')}` : null,
+      'Another show? Send /party fireworks',
+    ].filter(x => x !== null).join('\n'),
   });
 };
 
