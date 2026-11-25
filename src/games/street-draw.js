@@ -170,190 +170,98 @@ export function drawPointer(ctx, cam, from, to, color, label) {
 }
 
 // ---------------------------------------------------------------- controls
-const FULL_LOCK = Math.sin((32 * Math.PI) / 180); // tilting the phone ~32° is full steering
-
-/**
- * Steering from the phone's tilt, like a steering wheel: −1 (full left) … 1 (full right).
- * ax, ay, az: accelerationIncludingGravity (m/s²) in the phone's own axes; angle:
- * screen rotation (0 upright, 90 or −90 sideways). Phones disagree on the sign
- * (iPhones report the opposite of Android), so it's worked out from gravity
- * itself: held normally, "down" reads positive on one and negative on the other.
- */
-export function tiltSteer(ax, ay, az, angle) {
-  if (!Number.isFinite(ax) || !Number.isFinite(ay)) return 0;
-  const a = ((Math.round(angle / 90) * 90) % 360 + 360) % 360;
-  // gravity along the screen's left–right and bottom–top axes, whichever way the phone is held
-  const sx = a === 0 ? ax : a === 90 ? -ay : a === 180 ? -ax : ay;
-  const sy = a === 0 ? ay : a === 90 ? ax : a === 180 ? -ay : -ax;
-  const sign = sy + (Number.isFinite(az) ? az : 0) >= 0 ? -1 : 1;
-  const g = Math.max(-1, Math.min(1, (sign * sx) / 9.81 / FULL_LOCK));
-  return Math.abs(g) < 0.08 ? 0 : g; // small dead zone so a level phone drives straight
-}
-
-/** Where the on-screen wheel and brake pedal sit, for a screen of w × h game units. */
+/** Where the on-screen arrow buttons sit, for a screen of w × h game units. */
 export function padLayout(w, h) {
-  const r = Math.max(52, Math.min(82, Math.min(w, h) * 0.17));
+  const b = Math.round(Math.max(56, Math.min(84, Math.min(w, h) * 0.15))), m = 14, gap = 10;
   return {
-    wheel: { x: r + 22, y: h - r - 22, r },
-    brake: { x: w - 22 - r * 1.1, y: h - 22 - r * 1.5, w: r * 1.1, h: r * 1.5 },
-    button: { x: 12, y: 112, w: 84, h: 30 },
+    size: b,
+    left: { x: m, y: h - m - b, w: b, h: b },
+    right: { x: m + b + gap, y: h - m - b, w: b, h: b },
+    up: { x: w - m - b, y: h - m - b * 2 - gap, w: b, h: b },
+    down: { x: w - m - b, y: h - m - b, w: b, h: b },
   };
 }
-const MAX_TURN = (110 * Math.PI) / 180; // the wheel turns up to 110° each way
 const wrap = a => { while (a > Math.PI) a -= 2 * Math.PI; while (a < -Math.PI) a += 2 * Math.PI; return a; };
+const ARROWS = ['left', 'right', 'up', 'down'];
 
 /**
  * Driving controls → [throttle, steer].
- * Phone (default "wheel"): the car drives forward by itself; turn the steering
- * wheel at the bottom left with your thumb (it springs back when you let go)
- * and hold BRAKE at the bottom right to brake, or to reverse once stopped.
- * The mode button switches to TILT (tilt the phone like a wheel; hold the
- * screen to brake) or DRAG (a thumb joystick).
- * Computer: ↑/W go, ↓/S brake & reverse, ←→/AD steer; or hold the mouse
+ * Phone: four arrow buttons on screen, like the keyboard: ◀ ▶ steer (bottom
+ * left), ▲ gas and ▼ brake / reverse (bottom right). Press two at once to
+ * steer while driving. Slide a thumb from ◀ to ▶ and it follows.
+ * Computer: ↑/W gas, ↓/S brake & reverse, ←→/AD steer; or hold the mouse
  * button and the car drives toward the pointer.
- * `toWorld(x, y)` turns a screen position into city coordinates, `screen()`
- * gives the screen size in game units, `cssScale()` is screen pixels per unit.
+ * Either way the car eases off the gas a little in a turn, so corners fit.
+ * `toWorld(x, y)` turns a screen position into city coordinates and
+ * `screen()` gives the screen size in game units.
  */
-export function createDriveControls(input, { toWorld, screen = () => ({ w: 800, h: 480 }), cssScale = () => 1 }) {
+export function createDriveControls(input, { toWorld, screen = () => ({ w: 800, h: 480 }) }) {
   const touch = typeof window !== 'undefined' && (window.matchMedia?.('(hover: none) and (pointer: coarse)').matches || navigator.maxTouchPoints > 0);
-  const MODES = ['wheel', 'tilt', 'drag'];
-  const st = { mode: 'wheel', angle: 0, wheelId: null, grab: 0, start: 0, brakeIds: new Set(), joy: null, mouseDown: false };
-  const tilt = { live: false, steer: 0, asked: false };
+  const held = new Map(); // finger id → which arrow it's on
+  let mouseDown = false;
   const pads = () => { const { w, h } = screen(); return padLayout(w, h); };
-  const screenAngle = () => (typeof window !== 'undefined' && window.screen?.orientation ? window.screen.orientation.angle : Number(window.orientation) || 0);
-  const onMotion = e => {
-    const g = e.accelerationIncludingGravity;
-    if (!g || g.x == null) return;
-    tilt.live = true;
-    tilt.steer += (tiltSteer(g.x, g.y, g.z, screenAngle()) - tilt.steer) * 0.35;
+  // a little forgiving: a thumb just outside a button still counts
+  const arrowAt = pt => {
+    const L = pads(), pad = L.size * 0.25;
+    return ARROWS.find(k => { const r = L[k]; return pt.x >= r.x - pad && pt.x <= r.x + r.w + pad && pt.y >= r.y - pad && pt.y <= r.y + r.h + pad; }) || null;
   };
-  if (typeof window !== 'undefined') window.addEventListener('devicemotion', onMotion);
-  const askMotion = () => {
-    if (tilt.asked) return;
-    tilt.asked = true;
-    const D = typeof DeviceMotionEvent !== 'undefined' ? DeviceMotionEvent : null;
-    if (D && typeof D.requestPermission === 'function') D.requestPermission().catch(() => {});
-  };
-  const inRect = (p, r) => p.x >= r.x && p.x <= r.x + r.w && p.y >= r.y && p.y <= r.y + r.h;
-  const angleAt = (p, c) => Math.atan2(p.y - c.y, p.x - c.x);
-
   input.on('pointerdown', (pt, e) => {
-    if (pt.type === 'mouse') { st.mouseDown = true; return; }
-    const id = e?.pointerId ?? 0, L = pads();
-    if (touch && inRect(pt, L.button)) {
-      st.mode = MODES[(MODES.indexOf(st.mode) + 1) % MODES.length];
-      if (st.mode === 'tilt') askMotion();
-      st.joy = null; st.wheelId = null; st.brakeIds.clear();
-      return;
-    }
-    if (st.mode === 'wheel') {
-      const w = L.wheel;
-      if (inRect(pt, L.brake) || (pt.x > screen().w / 2 && Math.hypot(pt.x - w.x, pt.y - w.y) > w.r * 1.6)) { st.brakeIds.add(id); return; }
-      st.wheelId = id; st.grab = angleAt(pt, w); st.start = st.angle; // grab the wheel anywhere on the left
-      return;
-    }
-    if (st.mode === 'tilt') { askMotion(); st.brakeIds.add(id); return; }
-    st.joy = { id, ox: pt.x, oy: pt.y, cx: pt.x, cy: pt.y };
+    if (pt.type === 'mouse' && !touch) { mouseDown = true; return; }
+    const a = arrowAt(pt);
+    if (a) held.set(e?.pointerId ?? 0, a);
   });
   input.on('pointermove', (pt, e) => {
     const id = e?.pointerId ?? 0;
-    if (st.mode === 'wheel' && id === st.wheelId) {
-      const w = pads().wheel;
-      if (Math.hypot(pt.x - w.x, pt.y - w.y) < w.r * 0.18) return; // too close to the middle to read an angle
-      const a = angleAt(pt, w);
-      st.start += wrap(a - st.grab); st.grab = a; // follow the thumb round the wheel
-      st.angle = Math.max(-MAX_TURN, Math.min(MAX_TURN, st.start));
-      return;
-    }
-    if (st.joy && id === st.joy.id && pt.down) {
-      const j = st.joy; j.cx = pt.x; j.cy = pt.y;
-      const R = 46 / cssScale(), dx = j.cx - j.ox, dy = j.cy - j.oy, d = Math.hypot(dx, dy);
-      if (d > R) { j.ox = j.cx - (dx / d) * R; j.oy = j.cy - (dy / d) * R; }
-    }
+    if (!held.has(id)) return;
+    const a = arrowAt(pt);
+    if (a) held.set(id, a); // slid onto another arrow
   });
-  input.on('pointerup', (pt, e) => {
-    const id = e?.pointerId ?? 0;
-    if (pt.type === 'mouse') st.mouseDown = false;
-    if (id === st.wheelId) st.wheelId = null;
-    st.brakeIds.delete(id);
-    if (st.joy?.id === id) st.joy = null;
-  });
+  input.on('pointerup', (pt, e) => { mouseDown = false; held.delete(e?.pointerId ?? 0); });
+  const pressed = k => [...held.values()].includes(k);
   const towards = (car, ang, mag) => {
     const diff = wrap(ang - car.a);
     if (Math.abs(diff) > 2.5 && car.v < 80) return [-0.85 * mag, -Math.sign(diff) * Math.min(1, (Math.PI - Math.abs(diff)) * 2.5)];
     return [mag * (Math.abs(diff) > 1.4 ? 0.45 : 1), Math.max(-1, Math.min(1, diff * 2.6))];
   };
-  let last = performance.now();
   return {
-    get mode() { return st.mode; },
     read(car) {
-      const now = performance.now(), dt = Math.min(1, (now - last) / 1000); last = now;
-      // the wheel springs back to straight when you let go
-      if (st.wheelId === null && st.angle) st.angle = Math.abs(st.angle) < 0.03 ? 0 : st.angle * Math.pow(0.00005, dt);
       const k = input.keys;
-      const up = k.has('ArrowUp') || k.has('w') || k.has('W'), down = k.has('ArrowDown') || k.has('s') || k.has('S');
-      const left = k.has('ArrowLeft') || k.has('a') || k.has('A'), right = k.has('ArrowRight') || k.has('d') || k.has('D');
-      if (up || down || left || right) return [(up ? 1 : 0) - (down ? 1 : 0), (right ? 1 : 0) - (left ? 1 : 0)];
-      if (st.mouseDown && input.pointer.inside) {
+      const up = k.has('ArrowUp') || k.has('w') || k.has('W') || pressed('up');
+      const down = k.has('ArrowDown') || k.has('s') || k.has('S') || pressed('down');
+      const left = k.has('ArrowLeft') || k.has('a') || k.has('A') || pressed('left');
+      const right = k.has('ArrowRight') || k.has('d') || k.has('D') || pressed('right');
+      if (up || down || left || right) {
+        const steer = (right ? 1 : 0) - (left ? 1 : 0);
+        // ease off the gas a little while turning, so a corner fits in the road
+        const throttle = down ? -1 : up ? (steer ? 0.6 : 1) : 0;
+        return [throttle, steer];
+      }
+      if (mouseDown && input.pointer.inside) {
         const w = toWorld(input.pointer.x, input.pointer.y), d = Math.hypot(w.x - car.x, w.y - car.y);
         return d < 18 ? [0, 0] : towards(car, Math.atan2(w.y - car.y, w.x - car.x), Math.min(1, d / 120));
       }
-      if (!touch) return [0, 0];
-      const brake = st.brakeIds.size > 0;
-      // the car eases off by itself in a hard turn, like a driver lifting off the gas
-      const cruise = s => (brake ? -1 : 1 - 0.45 * Math.abs(s));
-      if (st.mode === 'wheel') { const s = Math.max(-1, Math.min(1, st.angle / ((60 * Math.PI) / 180))); return [cruise(s), s]; }
-      if (st.mode === 'tilt') { const s = tilt.live ? tilt.steer : 0; return [cruise(s), s]; }
-      if (st.joy) {
-        const R = 46 / cssScale(), dx = st.joy.cx - st.joy.ox, dy = st.joy.cy - st.joy.oy, d = Math.hypot(dx, dy);
-        return d < R * 0.18 ? [0, 0] : towards(car, Math.atan2(dy, dx), Math.min(1, d / R));
-      }
       return [0, 0];
     },
-    /** the wheel, pedal, mode button and joystick (screen coordinates) */
+    /** the arrow buttons (screen coordinates) */
     draw(ctx) {
       if (!touch) return;
       const L = pads();
       ctx.save();
-      // mode button
-      ctx.fillStyle = 'rgba(21,18,46,.85)'; ctx.strokeStyle = 'rgba(236,233,255,.4)'; ctx.lineWidth = 1.5;
-      roundRect(ctx, L.button.x, L.button.y, L.button.w, L.button.h, 15); ctx.fill(); ctx.stroke();
-      ctx.fillStyle = '#fff'; ctx.font = '800 12px system-ui, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      ctx.fillText(st.mode === 'wheel' ? '🛞 WHEEL' : st.mode === 'tilt' ? '📱 TILT' : '👆 DRAG', L.button.x + L.button.w / 2, L.button.y + L.button.h / 2 + 1);
-      if (st.mode !== 'drag') {
-        // brake pedal
-        const b = L.brake, on = st.brakeIds.size > 0;
+      for (const k of ARROWS) {
+        const r = L[k], on = pressed(k), col = k === 'up' ? '#9cff57' : k === 'down' ? '#ff4d4d' : '#2de2e6';
         ctx.globalAlpha = on ? 0.95 : 0.6;
-        ctx.fillStyle = on ? '#ff4d4d' : 'rgba(21,18,46,.8)'; ctx.strokeStyle = '#ff4d4d'; ctx.lineWidth = 2;
-        roundRect(ctx, b.x, b.y, b.w, b.h, 12); ctx.fill(); ctx.stroke();
-        ctx.strokeStyle = on ? 'rgba(255,255,255,.5)' : 'rgba(255,77,77,.5)'; ctx.lineWidth = 3;
-        for (let i = 1; i <= 3; i++) { const yy = b.y + (b.h * i) / 4; ctx.beginPath(); ctx.moveTo(b.x + 12, yy); ctx.lineTo(b.x + b.w - 12, yy); ctx.stroke(); }
-        ctx.globalAlpha = 1; ctx.fillStyle = '#fff'; ctx.font = '900 12px system-ui, sans-serif';
-        ctx.fillText('BRAKE', b.x + b.w / 2, b.y + b.h + 12);
-      }
-      if (st.mode === 'wheel') {
-        // the steering wheel, turned as far as the thumb turned it
-        const w = L.wheel;
-        ctx.save(); ctx.translate(w.x, w.y); ctx.rotate(st.angle);
-        ctx.globalAlpha = st.wheelId !== null ? 0.95 : 0.7;
-        ctx.strokeStyle = 'rgba(12,10,29,.7)'; ctx.lineWidth = w.r * 0.3; ctx.beginPath(); ctx.arc(0, 0, w.r * 0.86, 0, Math.PI * 2); ctx.stroke();
-        ctx.strokeStyle = '#ece9ff'; ctx.lineWidth = w.r * 0.2; ctx.beginPath(); ctx.arc(0, 0, w.r * 0.86, 0, Math.PI * 2); ctx.stroke();
-        ctx.strokeStyle = '#ff3d9a'; ctx.lineWidth = w.r * 0.2; ctx.beginPath(); ctx.arc(0, 0, w.r * 0.86, -Math.PI / 2 - 0.22, -Math.PI / 2 + 0.22); ctx.stroke(); // top mark
-        ctx.strokeStyle = '#ece9ff'; ctx.lineWidth = w.r * 0.13; ctx.lineCap = 'round';
-        ctx.beginPath(); ctx.moveTo(-w.r * 0.78, 0); ctx.lineTo(w.r * 0.78, 0); ctx.moveTo(0, 0); ctx.lineTo(0, w.r * 0.78); ctx.stroke();
-        ctx.fillStyle = '#15122e'; ctx.beginPath(); ctx.arc(0, 0, w.r * 0.26, 0, Math.PI * 2); ctx.fill();
-        ctx.strokeStyle = '#ece9ff'; ctx.lineWidth = 3; ctx.stroke();
+        ctx.fillStyle = on ? col : 'rgba(21,18,46,.8)'; ctx.strokeStyle = col; ctx.lineWidth = 2.5;
+        roundRect(ctx, r.x, r.y, r.w, r.h, 14); ctx.fill(); ctx.stroke();
+        // the arrow
+        const cx = r.x + r.w / 2, cy = r.y + r.h / 2, a = r.w * 0.22;
+        const dir = { up: -Math.PI / 2, down: Math.PI / 2, left: Math.PI, right: 0 }[k];
+        ctx.save(); ctx.translate(cx, cy); ctx.rotate(dir);
+        ctx.fillStyle = on ? '#0c0a1d' : col;
+        ctx.beginPath(); ctx.moveTo(a, 0); ctx.lineTo(-a * 0.7, -a); ctx.lineTo(-a * 0.7, a); ctx.closePath(); ctx.fill();
         ctx.restore();
       }
       ctx.restore();
-      if (st.mode === 'drag' && st.joy) {
-        ctx.save();
-        const R = 46 / cssScale(), j = st.joy, dx = j.cx - j.ox, dy = j.cy - j.oy, d = Math.hypot(dx, dy), m = d > R ? R / d : 1;
-        ctx.strokeStyle = 'rgba(236,233,255,.3)'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(j.ox, j.oy, R, 0, Math.PI * 2); ctx.stroke();
-        ctx.fillStyle = 'rgba(255,61,154,.4)'; ctx.beginPath(); ctx.arc(j.ox + dx * m, j.oy + dy * m, R * 0.42, 0, Math.PI * 2); ctx.fill();
-        ctx.restore();
-      }
     },
-    destroy() { if (typeof window !== 'undefined') window.removeEventListener('devicemotion', onMotion); },
+    destroy() {},
   };
 }

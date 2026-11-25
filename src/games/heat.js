@@ -25,7 +25,7 @@ export default {
   id: 'heat',
   title: 'Street Heat',
   blurb: 'Grab the loot, lose the cops, bank it at the hideout. 90 seconds in a neon city.',
-  controls: 'Phone: turn the wheel, hold BRAKE · Arrows/WASD · mouse: hold to drive',
+  controls: 'Arrow keys/WASD or the on-screen arrows: ▲ gas · ▼ brake · ◀ ▶ steer',
   length: '90 sec',
   better: 'higher',
   plausible: (score, seconds) => (score <= 30000 && seconds >= SOLO_SECONDS - 2 ? { ok: true } : { ok: false }),

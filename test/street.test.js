@@ -136,62 +136,44 @@ describe('Street Heat solo game', () => {
   });
 });
 
-describe('Street Heat tilt steering', () => {
-  it('steers like a wheel whichever way the phone is held, on Android and iPhone', async () => {
-    const { tiltSteer } = await import('../src/games/street-draw.js');
-    const g = 9.81, s20 = Math.sin(20 * Math.PI / 180) * g;
-    // Android, held upright (gravity reads +y): tipping the right side down → steer right
-    expect(tiltSteer(-s20, g, 3, 0)).toBeGreaterThan(0.5);
-    expect(tiltSteer(s20, g, 3, 0)).toBeLessThan(-0.5);
-    // iPhone reports everything the other way round: same turn, same steering
-    expect(tiltSteer(s20, -g, -3, 0)).toBeGreaterThan(0.5);
-    // lying almost flat (gravity mostly on z) still works on both
-    expect(tiltSteer(-s20, 1, g, 0)).toBeGreaterThan(0.5);
-    expect(tiltSteer(s20, -1, -g, 0)).toBeGreaterThan(0.5);
-    // held sideways (screen turned 90° either way): the long side is now left–right
-    expect(tiltSteer(g * 0.5, s20, 6, 90)).toBeGreaterThan(0.5);
-    expect(tiltSteer(-g * 0.5, -s20, 6, -90)).toBeGreaterThan(0.5);
-    expect(tiltSteer(-g * 0.5, -s20, -6, 90)).toBeGreaterThan(0.5); // iPhone, sideways
-    // level: straight ahead; tipped a lot: full lock, never more
-    expect(tiltSteer(0.3, g, 2, 0)).toBe(0);
-    expect(tiltSteer(-g, 1, 1, 0)).toBe(1);
-    expect(tiltSteer(NaN, 0, 0, 0)).toBe(0);
-  });
-});
-
-describe('Street Heat on-screen wheel', () => {
+describe('Street Heat on-screen arrows', () => {
   const fakeInput = () => {
     const ls = { pointerdown: [], pointermove: [], pointerup: [] };
     return { keys: new Set(), pointer: { inside: false }, on: (t, f) => ls[t]?.push(f), fire: (t, pt, id) => ls[t].forEach(f => f(pt, { pointerId: id })) };
   };
-  it('turning the wheel steers, letting go straightens it, and BRAKE brakes while you steer', async () => {
+  it('▲ drives, ◀ ▶ steer (two thumbs at once), ▼ brakes, letting go stops pressing', async () => {
     globalThis.window ||= { matchMedia: () => ({ matches: true }), addEventListener() {}, removeEventListener() {} };
     globalThis.navigator ||= { maxTouchPoints: 5 };
     const { createDriveControls, padLayout } = await import('../src/games/street-draw.js');
     const input = fakeInput();
-    const c = createDriveControls(input, { toWorld: (x, y) => ({ x, y }), screen: () => ({ w: 800, h: 480 }) });
-    const { wheel: w, brake: b } = padLayout(800, 480);
+    const c = createDriveControls(input, { toWorld: (x, y) => ({ x, y }), screen: () => ({ w: 480, h: 860 }) });
+    const L = padLayout(480, 860), mid = r => ({ x: r.x + r.w / 2, y: r.y + r.h / 2, type: 'touch', down: true });
     const car = { x: 0, y: 0, a: 0, v: 0 };
-    expect(c.read(car)).toEqual([1, 0]); // drives by itself, straight
-    // thumb on the top of the wheel, turned clockwise to the right side
-    input.fire('pointerdown', { x: w.x, y: w.y - w.r * 0.8, type: 'touch', down: true }, 1);
-    input.fire('pointermove', { x: w.x + w.r * 0.57, y: w.y - w.r * 0.57, type: 'touch', down: true }, 1);
-    input.fire('pointermove', { x: w.x + w.r * 0.8, y: w.y, type: 'touch', down: true }, 1);
-    const [th, steer] = c.read(car);
-    expect(th).toBeCloseTo(0.55); expect(steer).toBeGreaterThan(0.9); // right, easing off the gas in the turn
-    // second thumb on BRAKE while still steering
-    input.fire('pointerdown', { x: b.x + b.w / 2, y: b.y + b.h / 2, type: 'touch', down: true }, 2);
-    expect(c.read(car)[0]).toBe(-1);
-    expect(c.read(car)[1]).toBeGreaterThan(0.9);
-    input.fire('pointerup', { type: 'touch' }, 2);
-    // let go of the wheel: it springs back
+    expect(c.read(car)).toEqual([0, 0]); // nothing pressed: the car doesn't drive by itself
+    input.fire('pointerdown', mid(L.up), 1);
+    expect(c.read(car)).toEqual([1, 0]);
+    input.fire('pointerdown', mid(L.right), 2); // second thumb
+    expect(c.read(car)).toEqual([0.6, 1]); // turning eases off the gas a bit
+    input.fire('pointermove', mid(L.left), 2); // slide over to ◀
+    expect(c.read(car)).toEqual([0.6, -1]);
     input.fire('pointerup', { type: 'touch' }, 1);
-    await new Promise(r => setTimeout(r, 400));
-    expect(Math.abs(c.read(car)[1])).toBeLessThan(0.05);
-    // turning the other way steers left
-    input.fire('pointerdown', { x: w.x, y: w.y - w.r * 0.8, type: 'touch', down: true }, 3);
-    input.fire('pointermove', { x: w.x - w.r * 0.8, y: w.y, type: 'touch', down: true }, 3);
-    expect(c.read(car)[1]).toBeLessThan(-0.9);
+    input.fire('pointerdown', mid(L.down), 3);
+    expect(c.read(car)).toEqual([-1, -1]);
+    input.fire('pointerup', { type: 'touch' }, 2); input.fire('pointerup', { type: 'touch' }, 3);
+    expect(c.read(car)).toEqual([0, 0]);
+    // a tap away from the arrows does nothing
+    input.fire('pointerdown', { x: 240, y: 300, type: 'touch', down: true }, 4);
+    expect(c.read(car)).toEqual([0, 0]);
+  });
+  it('the arrows fit on any screen without overlapping', async () => {
+    const { padLayout } = await import('../src/games/street-draw.js');
+    for (const [w, h] of [[480, 860], [800, 480], [1280, 720]]) {
+      const L = padLayout(w, h);
+      for (const k of ['left', 'right', 'up', 'down']) { expect(L[k].x).toBeGreaterThanOrEqual(0); expect(L[k].x + L[k].w).toBeLessThanOrEqual(w); expect(L[k].y + L[k].h).toBeLessThanOrEqual(h); }
+      expect(L.right.x).toBeGreaterThan(L.left.x + L.left.w);
+      expect(L.up.y + L.up.h).toBeLessThan(L.down.y);
+      expect(L.right.x + L.right.w).toBeLessThan(L.up.x);
+    }
   });
 });
 
