@@ -6,7 +6,7 @@
 import css from '../src/ui/arcade.css';
 import { createPartyApp } from '../src/party/party-app.js';
 import { createSound } from '../src/core/sound.js';
-import { createParty, join, start, publicState } from '../src/party/rules.js';
+import { createParty, join, start, finish, publicState } from '../src/party/rules.js';
 import { createBattle, addShip, setInput, step, snapshot, battleStats } from '../src/party/battle.js';
 
 const style = document.createElement('style');
@@ -43,7 +43,8 @@ function begin() {
   for (const [k, pl] of Object.entries(p.players)) addShip(sim, k, pl.name);
   state();
   let t = 0;
-  setInterval(() => {
+  const tick = setInterval(() => {
+    if (Date.now() >= p.endAt) { clearInterval(tick); finish(p); state(); return; }
     t += 0.05;
     BOTS.forEach(([k], i) => setInput(sim, k, Math.cos(t * 0.7 + i * 2), Math.sin(t * 0.9 + i)));
     step(sim, 0.05);

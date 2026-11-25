@@ -13,6 +13,9 @@
 
 import { W, H, TOP, SHIP_R, MAX_HP, DURATION, buildArena, moveShip } from './battle.js';
 import { C, MONO, drawHud } from '../games/draw.js';
+import { fitLayout, toScreen, fromScreen, createSpace } from './screen-fit.js';
+
+export { toScreen, fromScreen };
 
 const RENDER_DELAY = 110;
 const JOY_CSS = 46;                // joystick radius in screen pixels
@@ -20,19 +23,7 @@ const lerp = (a, b, t) => a + (b - a) * t;
 const lerpAngle = (a, b, t) => { let d = b - a; while (d > Math.PI) d -= 2 * Math.PI; while (d < -Math.PI) d += 2 * Math.PI; return a + d * t; };
 
 /** Screen layout for the arena. Portrait screens get the arena turned sideways. */
-export function battleLayout(boxW, boxH) {
-  const portrait = boxH > boxW * 1.15;
-  const sw = portrait ? H - TOP : W, sh = portrait ? W + TOP : H; // screen size in game units
-  const css = Math.max(0.1, Math.min(boxW / sw, boxH / sh));      // CSS px per game unit
-  return { portrait, sw, sh, css };
-}
-
-/** Game position → 0–1 canvas position, and back (pointer input). */
-export function toScreen(view, x, y) { return view.portrait ? { sx: H - y, sy: x + TOP } : { sx: x, sy: y }; }
-export function fromScreen(view, u, v) {
-  const sx = u * view.sw, sy = v * view.sh;
-  return view.portrait ? { x: sy - TOP, y: H - sx } : { x: sx, y: sy };
-}
+export const battleLayout = (boxW, boxH) => fitLayout(boxW, boxH, { rotate: true });
 
 export function createBattleView({ ctx, input, send, serverNow, getParty, getMe, color, sound, parts, view, rtt = () => 150 }) {
   let blocks = [], seed = null;
@@ -160,17 +151,8 @@ export function createBattleView({ ctx, input, send, serverNow, getParty, getMe,
   }
 
   // ---- drawing helpers ----
-  const k = () => ctx.canvas.width / view.sw; // canvas pixels per game unit
-  function worldSpace() {
-    const s = k();
-    if (view.portrait) ctx.setTransform(0, s, -s, 0, s * H, s * TOP);
-    else ctx.setTransform(s, 0, 0, s, 0, 0);
-  }
-  function screenSpace() { const s = k(); ctx.setTransform(s, 0, 0, s, 0, 0); }
-  // a point offset in *screen* directions (up/down/left/right) from a game point
-  const off = (x, y, dx, dy) => (view.portrait ? [x + dy, y - dx] : [x + dx, y + dy]);
-  // draw something at a game point, the right way up on screen
-  function upright(x, y, f) { ctx.save(); ctx.translate(x, y); if (view.portrait) ctx.rotate(-Math.PI / 2); f(); ctx.restore(); }
+  const space = createSpace(ctx, view);
+  const worldSpace = space.world, screenSpace = space.screen, off = space.off, upright = space.upright;
 
   function drawShip(x, y, a, col, { me = false, inv = false, rapid = false, hp = MAX_HP, name = '' } = {}) {
     if (inv && Math.floor(performance.now() / 90) % 2 === 0) return;

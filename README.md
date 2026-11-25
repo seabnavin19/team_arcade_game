@@ -46,6 +46,8 @@ Send **`/party`** in the group and pick a game from the buttons, or go straight 
 The bot posts a card with a **Join the party** button and a 60-second countdown. A party needs at least 2 players, and one party runs per group at a time.
 As soon as 2 players are in, anyone in the lobby can tap **▶ Start now**. Everyone then gets a 3-second countdown instead of waiting out the full minute.
 
+While a game runs it fills the whole screen. Ship Battle, Snake Arena and Reaction Tap also turn sideways on a phone held upright, so the arena uses the tall screen (text stays the right way up, and Snake's arrows mean "that way on screen"). Draw & Guess, the Firework Show and the Boat Race stay landscape, so drawings look the same for everyone. On a phone held sideways, buttons such as Paddle and Snake's arrows sit beside the game instead of under it.
+
 **🚣 Water Festival Boat Race** (up to 90 seconds, 2–16 players)
 - A Bon Om Touk dragon-boat race on the Tonle Sap, finishing at the Royal Palace.
 - A drum beats (about 75 a minute, faster on the final stretch); tap **Paddle** as the ring closes. Perfect strokes push hardest, off-beat strokes barely move you.
@@ -70,8 +72,6 @@ As soon as 2 players are in, anyone in the lobby can tap **▶ Start now**. Ever
 - Pickups appear every 12 seconds: **+** refills your shields, **R** gives 6 seconds of rapid fire.
 - **Most KOs wins.** Ties go to whoever was knocked out fewer times.
 - Controls: mouse (the ship flies toward the cursor), arrow keys / WASD, or on a phone put your thumb down anywhere and drag like a joystick.
-- The arena fills the screen. On a phone held upright it turns sideways so it uses the whole tall screen.
-- Try it locally with bot ships and pretend lag: `node dev/battle-demo.mjs`, then open `dist/battle-demo.html?lag=200`.
 
 **🎨 Draw & Guess** (3 rounds of 50 seconds; 2–12 players)
 - Players take turns as the artist, in a random order. With 2 players that's A, B, then A again; with more than 3 players, three different people draw. Only the artist sees the secret word (cat, coffee, tuk tuk…) and draws it, and everyone sees the drawing appear live.
@@ -237,13 +237,15 @@ To update the games, upload a new `arcade.js` with the same name. Players get it
 
 ```bash
 npm install
-npm test                       # 209 automated tests: game rules, saving and conflicts, ranking, the Telegram server, live parties, Duo Mode, the music room
+npm test                       # 220 automated tests: game rules, saving and conflicts, ranking, the Telegram server, live parties, Duo Mode, the music room
 npm run build                  # dist/ (Confluence) and site/ (Telegram / GitHub Pages)
 
 node dev/local-telegram.mjs    # Telegram version with a pretend Telegram + GitHub → http://localhost:8787/play?name=Dara
 cd telegram && npx wrangler dev # the real Worker locally, with live party rooms (put secrets in telegram/.dev.vars)
 python3 -m http.server 8765    # Confluence version on a pretend Confluence → http://localhost:8765/dev/harness.html?user=dara
 node dev/firework-demo.mjs     # Firework Show with bot players → open dist/firework-demo.html (?draw=20 for a shorter drawing time)
+node dev/party-demo.mjs        # any party game against bot players, real game server in the page → dist/party-demo.html#snake (no hash = pick a game)
+node dev/battle-demo.mjs       # Ship Battle with bot ships and pretend lag → dist/battle-demo.html?lag=200
 node dev/duo-demo.mjs          # Duo Mode with a bot partner → open dist/duo-demo.html?game=sync (or ?game=market)
 ```
 

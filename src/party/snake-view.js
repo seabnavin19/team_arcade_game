@@ -1,20 +1,25 @@
 // Snake Arena in the browser. The server moves the snakes 8 times a second;
 // we slide each segment smoothly between those moves. Steer with arrow keys /
 // WASD, by swiping on the board, or with the on-screen arrows on phones.
+// On an upright phone the board is turned sideways to fill the screen; the
+// arrows and keys always mean "that way on screen".
 
 import { COLS, ROWS, CELL, TOP, TICK_MS, RESPAWN_TICKS } from './snake.js';
 import { C, MONO, drawHud } from '../games/draw.js';
+import { fromScreen, screenDir, createSpace } from './screen-fit.js';
 
 const W = COLS * CELL, H = TOP + ROWS * CELL;
 const KEYMAP = { ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right', w: 'up', s: 'down', a: 'left', d: 'right', W: 'up', S: 'down', A: 'left', D: 'right' };
 
-export function createSnakeView({ ctx, input, send, serverNow, getParty, getMe, color, sound, parts, floats, dpad }) {
+export function createSnakeView({ ctx, input, send, serverNow, getParty, getMe, color, sound, parts, floats, dpad, view = { portrait: false, sw: W, sh: H, css: 1 } }) {
+  const space = createSpace(ctx, view);
+  input.setMap((u, v) => fromScreen(view, u, v));
   let prev = null, cur = null, curAt = 0;
   let swipe = null, myDownAt = null;
   const feed = [];
 
   const turn = d => { send({ type: 'dir', d }); };
-  input.on('keydown', e => { if (KEYMAP[e.key]) { e.preventDefault?.(); turn(KEYMAP[e.key]); } });
+  input.on('keydown', e => { if (KEYMAP[e.key]) { e.preventDefault?.(); turn(screenDir(view, KEYMAP[e.key])); } });
   input.on('pointerdown', pt => { swipe = { x: pt.x, y: pt.y, done: false }; });
   input.on('pointermove', pt => {
     if (!swipe || swipe.done || !pt.down) return;
@@ -24,7 +29,7 @@ export function createSnakeView({ ctx, input, send, serverNow, getParty, getMe, 
     swipe = { x: pt.x, y: pt.y, done: false }; // keep swiping to chain turns
   });
   input.on('pointerup', () => { swipe = null; });
-  dpad?.addEventListener('pointerdown', e => { const b = e.target.closest('[data-d]'); if (b) { e.preventDefault(); turn(b.dataset.d); } });
+  dpad?.addEventListener('pointerdown', e => { const b = e.target.closest('[data-d]'); if (b) { e.preventDefault(); turn(screenDir(view, b.dataset.d)); } });
 
   const nameOf = key => getParty()?.players.find(p => p.key === key)?.name || '?';
   const bodyOf = arr => { const out = []; for (let i = 3; i < arr.length; i += 2) out.push([arr[i], arr[i + 1]]); return out; };
@@ -55,13 +60,15 @@ export function createSnakeView({ ctx, input, send, serverNow, getParty, getMe, 
   function render() {
     const party = getParty(), me = getMe();
     if (!party) return;
-    ctx.fillStyle = C.bg; ctx.fillRect(0, 0, W, H);
+    space.screen();
+    ctx.fillStyle = C.bg; ctx.fillRect(0, 0, view.sw, view.sh);
+    space.world();
     // board
     ctx.fillStyle = '#100d24'; ctx.fillRect(0, TOP, W, ROWS * CELL);
     ctx.fillStyle = 'rgba(141,136,179,0.10)';
     for (let x = 0; x < COLS; x++) for (let y = 0; y < ROWS; y++) if ((x + y) % 2 === 0) ctx.fillRect(x * CELL, TOP + y * CELL, CELL, CELL);
     ctx.strokeStyle = 'rgba(255,61,154,.6)'; ctx.lineWidth = 2; ctx.strokeRect(1, TOP + 1, W - 2, ROWS * CELL - 2);
-    if (!cur) { drawHud(ctx, W, { left: 'GET READY', right: '', progress: 0 }); return; }
+    if (!cur) { space.screen(); drawHud(ctx, view.sw, { left: 'GET READY', right: '', progress: 0 }); return; }
 
     // food
     const pulse = 1 + Math.sin(performance.now() / 180) * 0.12;
@@ -96,33 +103,36 @@ export function createSnakeView({ ctx, input, send, serverNow, getParty, getMe, 
       const [hx, hy] = pos[0];
       ctx.fillStyle = '#0c0a1d';
       ctx.beginPath(); ctx.arc(hx + 7, hy + 8, 2.3, 0, Math.PI * 2); ctx.arc(hx + 13, hy + 8, 2.3, 0, Math.PI * 2); ctx.fill();
-      // name over the head
-      ctx.font = '700 11px system-ui, sans-serif'; ctx.textAlign = 'center';
-      const label = key === me ? 'You' : nameOf(key).slice(0, 10);
-      const ly = hy - 5 < TOP + 10 ? hy + CELL + 12 : hy - 5;
-      ctx.fillStyle = key === me ? C.text : col; ctx.fillText(label, hx + CELL / 2, ly);
       ctx.restore();
+      // name over the head (on screen), the right way up
+      const label = key === me ? 'You' : nameOf(key).slice(0, 10);
+      const cx = hx + CELL / 2, cy = hy + CELL / 2;
+      const nearTop = view.portrait ? cx - 15 < 10 : cy - 15 < TOP + 10;
+      const [lx, ly] = space.off(cx, cy, 0, nearTop ? 22 : -15);
+      space.upright(lx, ly, () => { ctx.font = '700 11px system-ui, sans-serif'; ctx.textAlign = 'center'; ctx.fillStyle = key === me ? C.text : col; ctx.fillText(label, 0, 0); });
     }
-    parts.draw(ctx); floats.draw(ctx);
-    // crash feed
+    parts.draw(ctx); space.floats(floats.list, MONO);
+    // crash feed and messages, drawn on the screen (never sideways)
+    space.screen();
     const t = performance.now();
     ctx.save(); ctx.font = '700 12px system-ui, sans-serif'; ctx.textAlign = 'right';
-    feed.filter(f => f.until > t).forEach((f, i) => { ctx.fillStyle = f.mine ? C.yellow : 'rgba(236,233,255,.75)'; ctx.fillText(f.text, W - 10, TOP + 18 + i * 17); });
+    feed.filter(f => f.until > t).forEach((f, i) => { ctx.fillStyle = f.mine ? C.yellow : 'rgba(236,233,255,.75)'; ctx.fillText(f.text, view.sw - 10, TOP + 18 + i * 17); });
     ctx.restore();
     if (myDownAt) {
       const left = Math.max(0, (RESPAWN_TICKS * TICK_MS) / 1000 - (t - myDownAt) / 1000);
       ctx.save(); ctx.font = '900 italic 34px system-ui, sans-serif'; ctx.textAlign = 'center'; ctx.fillStyle = C.red; ctx.shadowColor = C.red; ctx.shadowBlur = 18;
-      ctx.fillText('CRASHED!', W / 2, TOP + ROWS * CELL / 2 - 6); ctx.font = MONO; ctx.shadowBlur = 0; ctx.fillStyle = C.text;
-      ctx.fillText(`back in ${left.toFixed(1)}s`, W / 2, TOP + ROWS * CELL / 2 + 26); ctx.restore();
+      ctx.fillText('CRASHED!', view.sw / 2, view.sh / 2 - 6); ctx.font = MONO; ctx.shadowBlur = 0; ctx.fillStyle = C.text;
+      ctx.fillText(`back in ${left.toFixed(1)}s`, view.sw / 2, view.sh / 2 + 26); ctx.restore();
     }
     // HUD
     const mine = cur.snakes.find(s => cur.who[s[0]] === me);
     const myLen = mine && mine[1] ? (mine.length - 3) / 2 : 0;
     const lead = party.players[0];
     const secs = Math.max(0, Math.ceil((party.endAt - serverNow()) / 1000));
-    drawHud(ctx, W, {
-      left: `POINTS ${mine ? mine[2] : 0}   LENGTH ${myLen}`,
-      right: `${lead && lead.key !== me && lead.score > 0 ? `LEAD ${lead.name.slice(0, 10)} ` : ''}${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}`,
+    const narrow = view.sw < 600;
+    drawHud(ctx, view.sw, {
+      left: narrow ? `${mine ? mine[2] : 0} PTS  LEN ${myLen}` : `POINTS ${mine ? mine[2] : 0}   LENGTH ${myLen}`,
+      right: `${!narrow && lead && lead.key !== me && lead.score > 0 ? `LEAD ${lead.name.slice(0, 10)} ` : ''}${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}`,
       progress: Math.min(1, Math.max(0, 1 - (party.endAt - serverNow()) / ((party.endAt - party.startAt) || 1))),
     });
   }

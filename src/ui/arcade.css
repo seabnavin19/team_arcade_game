@@ -151,14 +151,32 @@ body.ta-fullpage #team-arcade .ta { max-width: 1040px; margin: 0 auto; border: 0
 #team-arcade .ta-party .ta-party-game canvas { cursor: crosshair; }
 #team-arcade .ta .ta-party-start { margin: 4px auto 0; padding: 11px 26px; font-size: 16px; background: var(--lime); box-shadow: 0 0 22px rgba(156,255,87,.4); }
 #team-arcade .ta .ta-party-start:disabled { opacity: .5; cursor: default; }
-/* Ship Battle in progress: the game takes the whole screen */
-#team-arcade .ta.ta-party.is-live-battle { position: fixed; inset: 0; z-index: 2147483000; max-width: none; min-height: 0; height: 100%; margin: 0; padding: 6px; border: 0; border-radius: 0; display: flex; flex-direction: column; }
-#team-arcade .ta.ta-party.is-live-battle > .ta-top, #team-arcade .ta.ta-party.is-live-battle .ta-rotate { display: none; }
-#team-arcade .ta.ta-party.is-live-battle .ta-party-game { flex: 1; min-height: 0; margin: 0; display: flex; flex-direction: column; }
-#team-arcade .ta.ta-party.is-live-battle .ta-canvas-wrap { flex: 1; min-height: 0; width: 100%; max-width: none; margin: 0; display: flex; align-items: center; justify-content: center; overflow: hidden; }
-#team-arcade .ta.ta-party.is-live-battle canvas { flex: none; border-radius: 8px; }
-#team-arcade .ta.ta-party.is-live-battle .ta-party-board { flex: none; display: flex; gap: 6px; max-width: none; margin: 6px 0 0; overflow-x: auto; scrollbar-width: none; }
-#team-arcade .ta.ta-party.is-live-battle .ta-party-board li { flex: none; padding: 3px 9px; font-size: 12px; }
+/* A party game in progress takes the whole screen */
+#team-arcade .ta.ta-party.is-live { position: fixed; inset: 0; z-index: 2147483000; max-width: none; min-height: 0; height: 100%; margin: 0; padding: 6px; border: 0; border-radius: 0; display: flex; flex-direction: column; }
+#team-arcade .ta.ta-party.is-live > .ta-top, #team-arcade .ta.ta-party.is-live .ta-rotate { display: none; }
+#team-arcade .ta.ta-party.is-live .ta-party-game { flex: 1; min-height: 0; margin: 0; display: flex; flex-direction: column; overflow-y: auto; }
+#team-arcade .ta.ta-party.is-live .ta-party-game > * { flex: none; }
+#team-arcade .ta.ta-party.is-live .ta-live-row { flex: 1 1 0; min-height: 0; display: flex; flex-direction: column; }
+#team-arcade .ta.ta-party.is-live:not(.is-live-canvas) .ta-live-row { flex: 0 0 auto; }
+#team-arcade .ta.ta-party.is-live .ta-side { flex: none; }
+/* phone held sideways: controls go beside the game instead of under it */
+@media (orientation: landscape) and (max-height: 560px) {
+  #team-arcade .ta.ta-party.is-live-canvas .ta-live-row { flex-direction: row; gap: 8px; }
+  #team-arcade .ta.ta-party.is-live-canvas .ta-side { flex: 0 0 clamp(200px, 34%, 340px); min-height: 0; overflow-y: auto; display: flex; flex-direction: column; justify-content: center; }
+  #team-arcade .ta.ta-party.is-live-canvas .ta-side:not(:has(> :not([hidden]))) { display: none; }
+  #team-arcade .ta.ta-party.is-live-canvas .ta-side > * { margin-top: 0; }
+}
+#team-arcade .ta.ta-party.is-live .ta-canvas-wrap { flex: 1 1 0; min-height: 0; width: 100%; max-width: none; margin: 0; display: flex; align-items: center; justify-content: center; overflow: hidden; }
+#team-arcade .ta.ta-party.is-live-canvas .ta-party-game { overflow: hidden; }
+#team-arcade .ta.ta-party.is-live canvas { flex: none; border-radius: 8px; }
+#team-arcade .ta.ta-party.is-live .ta-draw-top { max-width: none; margin: 0 0 6px; padding: 6px 10px; }
+#team-arcade .ta.ta-party.is-live .ta-draw-ui, #team-arcade .ta.ta-party.is-live .ta-boat, #team-arcade .ta.ta-party.is-live .ta-fw { max-width: none; margin: 6px 0 0; }
+#team-arcade .ta.ta-party.is-live .ta-dpad { margin: 6px auto 0; }
+#team-arcade .ta.ta-party.is-live:not(.is-live-canvas) .ta-party-game { justify-content: safe center; }
+#team-arcade .ta.ta-party.is-live .ta-quiz { width: min(100%, 860px); max-width: none; margin: 0 auto; }
+#team-arcade .ta.ta-party.is-live .ta-party-board { display: flex; gap: 6px; max-width: none; margin: 6px 0 0; overflow-x: auto; scrollbar-width: none; }
+#team-arcade .ta.ta-party.is-live:not(.is-live-canvas) .ta-party-board { justify-content: safe center; }
+#team-arcade .ta.ta-party.is-live .ta-party-board li { flex: none; padding: 3px 9px; font-size: 12px; }
 #team-arcade .ta-party-note { min-height: 1.4em; margin-top: 10px; color: var(--yellow); font-weight: 700; font-size: 13px; }
 
 /* Brain Race */

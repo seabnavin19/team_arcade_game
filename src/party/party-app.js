@@ -1,7 +1,8 @@
 // The live party screen: lobby → synced Reaction Tap round → results.
 
 import { timelineFor, PARTY_GAMES } from './rules.js';
-import { createBattleView, battleLayout } from './battle-view.js';
+import { createBattleView } from './battle-view.js';
+import { fitLayout, fromScreen, createSpace } from './screen-fit.js';
 import { createQuizView } from './quiz-view.js';
 import { createSnakeView } from './snake-view.js';
 import { createDrawView } from './draw-view.js';
@@ -15,7 +16,7 @@ import { ROUNDS as SYNC_ROUNDS } from './sync.js';
 import { radiusAt, W, H, DURATION } from '../games/reaction.js';
 import { createLoop } from '../core/loop.js';
 import { createInput } from '../core/input.js';
-import { C, glowCircle, drawHud, Particles, FloatText } from '../games/draw.js';
+import { C, MONO, glowCircle, drawHud, Particles, FloatText } from '../games/draw.js';
 import { ICONS } from '../ui/icons.js';
 
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -44,7 +45,9 @@ export function createPartyApp(root, { api, token, sound, onExit, WebSocketImpl 
       </section>
       <section class="ta-party-game" data-game hidden>
         <div class="ta-draw-top" data-drawtop hidden></div>
+        <div class="ta-live-row">
         <div class="ta-canvas-wrap" data-canvaswrap><canvas data-canvas tabindex="0"></canvas><div class="ta-overlay" data-overlay></div></div>
+        <div class="ta-side">
         <div class="ta-boat" data-boat hidden></div>
         <div class="ta-fw" data-fw hidden></div>
         <div class="ta-quiz" data-quiz hidden></div>
@@ -55,6 +58,8 @@ export function createPartyApp(root, { api, token, sound, onExit, WebSocketImpl 
           <button type="button" data-d="left" aria-label="Left">◀</button>
           <button type="button" data-d="right" aria-label="Right">▶</button>
           <button type="button" data-d="down" aria-label="Down">▼</button>
+        </div>
+        </div>
         </div>
         <ol class="ta-party-board" data-board></ol>
         <p class="ta-rotate">Tip: turn your phone sideways for a bigger game.</p>
@@ -206,10 +211,10 @@ export function createPartyApp(root, { api, token, sound, onExit, WebSocketImpl 
       if (p.game === 'boat' && !boatView) boatView = createBoatView({ ctx, panel: el.boat, input, send, serverNow, getParty: () => party, getMe: () => me, sound, parts, floats });
       if (p.game === 'market' && !marketView) marketView = createMarketView(el.duo, { send, serverNow, getMe: () => me, getParty: () => party, sound });
       if (p.game === 'quiz' && !quizView) quizView = createQuizView(el.quiz, { send, serverNow, getMe: () => me, sound, input });
-      if (p.game === 'battle' && !battle) battle = createBattleView({ ctx, input, send, serverNow, getParty: () => party, getMe: () => me, color, sound, parts, view: battleView, rtt: () => bestRtt });
+      if (p.game === 'battle' && !battle) battle = createBattleView({ ctx, input, send, serverNow, getParty: () => party, getMe: () => me, color, sound, parts, view: screenView, rtt: () => bestRtt });
       el.drawtop.hidden = el.drawui.hidden = p.game !== 'draw';
       if (p.game === 'draw' && !drawView) drawView = createDrawView({ ctx, top: el.drawtop, ui: el.drawui, input, send, serverNow, getMe: () => me, sound });
-      if (p.game === 'snake' && !battle) battle = createSnakeView({ ctx, input, send, serverNow, getParty: () => party, getMe: () => me, color, sound, parts, floats, dpad: el.dpad });
+      if (p.game === 'snake' && !battle) battle = createSnakeView({ ctx, input, send, serverNow, getParty: () => party, getMe: () => me, color, sound, parts, floats, dpad: el.dpad, view: screenView });
       let touchOnly = false;
       try { touchOnly = !window.matchMedia('(any-pointer: fine)').matches; } catch { /* old browser */ }
       el.dpad.hidden = !(p.game === 'snake' && touchOnly);
@@ -224,8 +229,8 @@ export function createPartyApp(root, { api, token, sound, onExit, WebSocketImpl 
     const status = fatal ? 'error' : party?.status || 'connecting';
     el.lobby.hidden = !(status === 'lobby' || status === 'connecting');
     el.game.hidden = status !== 'running';
-    const live = status === 'running' && party?.game === 'battle';
-    if (el.root.classList.contains('is-live-battle') !== live) { el.root.classList.toggle('is-live-battle', live); fitBattle(); }
+    const live = status === 'running';
+    if (el.root.classList.contains('is-live') !== live) { el.root.classList.toggle('is-live', live); el.root.classList.toggle('is-live-canvas', live && !el.canvaswrap.hidden); fitCanvas(); }
     el.results.hidden = !(status === 'done' || status === 'cancelled' || status === 'error');
 
     if (party) {
@@ -314,24 +319,28 @@ export function createPartyApp(root, { api, token, sound, onExit, WebSocketImpl 
   })();
   const input = createInput(el.canvas, { width: W, height: H, captureAllKeys: false });
 
-  // Ship Battle fills the screen: the canvas is sized to the space left over,
-  // and on an upright phone the arena is turned sideways (see battle-view.js).
-  const battleView = { portrait: false, sw: W, sh: H, css: 1 };
-  function fitBattle() {
-    if (!el.root.classList.contains('is-live-battle')) return;
+  // While a game runs it fills the screen: the canvas is sized to the space
+  // left over. Arena games (Ship Battle, Snake, Reaction Tap) also turn
+  // sideways on an upright phone; games with drawings or a river stay landscape.
+  const ROTATES = new Set(['battle', 'snake', 'reaction']);
+  const screenView = { portrait: false, sw: W, sh: H, css: 1 };
+  const space = createSpace(ctx, screenView);
+  input.setMap((u, v) => fromScreen(screenView, u, v));
+  function fitCanvas() {
+    if (!el.root.classList.contains('is-live-canvas')) return;
     const bw = el.canvaswrap.clientWidth, bh = el.canvaswrap.clientHeight;
     if (!bw || !bh) return;
-    Object.assign(battleView, battleLayout(bw, bh));
+    Object.assign(screenView, fitLayout(bw, bh, { rotate: ROTATES.has(party?.game) }));
     const dpr = Math.min(2, window.devicePixelRatio || 1);
-    const cw = Math.floor(battleView.sw * battleView.css), ch = Math.floor(battleView.sh * battleView.css);
+    const cw = Math.floor(screenView.sw * screenView.css), ch = Math.floor(screenView.sh * screenView.css);
     el.canvas.style.width = `${cw}px`; el.canvas.style.height = `${ch}px`;
     const pw = Math.round(cw * dpr), ph = Math.round(ch * dpr);
     if (el.canvas.width !== pw || el.canvas.height !== ph) { el.canvas.width = pw; el.canvas.height = ph; }
   }
   let resizeObs = null;
-  try { resizeObs = new ResizeObserver(fitBattle); resizeObs.observe(el.canvaswrap); } catch { /* old browser */ }
-  window.addEventListener('resize', fitBattle);
-  window.addEventListener('orientationchange', fitBattle);
+  try { resizeObs = new ResizeObserver(fitCanvas); resizeObs.observe(el.canvaswrap); } catch { /* old browser */ }
+  window.addEventListener('resize', fitCanvas);
+  window.addEventListener('orientationchange', fitCanvas);
   let battle = null;
   let quizView = null;
   let boatView = null;
@@ -380,12 +389,16 @@ export function createPartyApp(root, { api, token, sound, onExit, WebSocketImpl 
     render() {
       if (party?.status !== 'running') return;
       if (party.game === 'battle' || party.game === 'snake') { battle?.render(); return; }
+      if (party.game === 'quiz' || party.duo) return;
+      space.world(); // scale to the canvas size (these games are never sideways)
       if (party.game === 'boat') { boatView?.render(); return; }
       if (party.game === 'firework') { fwView?.render(); return; }
-      if (party.game === 'quiz' || party.duo) return;
       if (party.game === 'draw') { drawView?.render(); return; }
+      // Reaction Tap (may be sideways on an upright phone)
       const t = (serverNow() - party.startAt) / 1000;
-      ctx.fillStyle = C.bg; ctx.fillRect(0, 0, W, H);
+      space.screen();
+      ctx.fillStyle = C.bg; ctx.fillRect(0, 0, screenView.sw, screenView.sh);
+      space.world();
       ctx.strokeStyle = 'rgba(141,136,179,0.07)'; ctx.lineWidth = 1;
       for (let x = 0; x <= W; x += 40) { ctx.beginPath(); ctx.moveTo(x, 56); ctx.lineTo(x, H); ctx.stroke(); }
       timeline.forEach((tg, i) => {
@@ -393,12 +406,13 @@ export function createPartyApp(root, { api, token, sound, onExit, WebSocketImpl 
         if (age < 0 || age > tg.life || hidden.has(i)) return;
         glowCircle(ctx, tg.x, tg.y, radiusAt(tg, age) * Math.min(1, age / 0.08), tg.fake ? C.red : C.cyan, tg.fake);
       });
-      parts.draw(ctx); floats.draw(ctx);
+      parts.draw(ctx); space.floats(floats.list, MONO);
+      space.screen();
       const mine = party.players.find(p => p.key === me);
       const lead = party.players[0];
-      drawHud(ctx, W, {
+      drawHud(ctx, screenView.sw, {
         left: `YOU ${fmt(mine?.score || 0)}${mine ? `  #${mine.place}` : ''}`,
-        right: `${lead && lead.key !== me ? `LEAD ${lead.name.slice(0, 10)} ` : ''}${Math.max(0, Math.ceil(DURATION - t))}s`,
+        right: `${screenView.sw >= 600 && lead && lead.key !== me ? `LEAD ${lead.name.slice(0, 10)} ` : ''}${Math.max(0, Math.ceil(DURATION - t))}s`,
         progress: Math.min(1, Math.max(0, t / DURATION)),
       });
     },
@@ -406,7 +420,7 @@ export function createPartyApp(root, { api, token, sound, onExit, WebSocketImpl 
 
   function exit() {
     closed = true; loop.stop(); input.destroy();
-    resizeObs?.disconnect(); window.removeEventListener('resize', fitBattle); window.removeEventListener('orientationchange', fitBattle); try { ws?.close(); } catch { /* ignore */ } onExit?.();
+    resizeObs?.disconnect(); window.removeEventListener('resize', fitCanvas); window.removeEventListener('orientationchange', fitCanvas); try { ws?.close(); } catch { /* ignore */ } onExit?.();
   }
 
   loop.start();
