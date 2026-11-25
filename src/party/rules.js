@@ -11,7 +11,7 @@ import { MAX_SECONDS as RACE_SECONDS, MAX_PLAYERS as RACE_MAX } from './boat.js'
 import { SHOW_SECONDS, MAX_PLAYERS as SHOW_MAX } from './firework.js';
 
 export const JOIN_SECONDS = 60;      // lobby length after /party
-export const MIN_PLAYERS = 2;        // fewer than this → cancelled (a game can set its own minPlayers)
+export const MIN_PLAYERS = 1;        // one person can start a party: bots fill it up to 4 (see bots.js). Duo games need 2.
 export const LATE_JOIN_CUTOFF = 10;  // can't join in the last 10 seconds
 export const PARTY_SECONDS = DURATION;
 
@@ -22,8 +22,8 @@ export const PARTY_GAMES = {
     pitch: '8 quick IQ puzzles: number patterns, maths, time and logic. Everyone gets the same puzzle at the same moment. Right answers score more the faster you are, plus a bonus for the first correct answer. One try per puzzle!' },
   boat: { title: 'Water Festival Boat Race', emoji: '🚣', seconds: RACE_SECONDS, maxPlayers: RACE_MAX,
     pitch: 'A Bon Om Touk dragon boat race on the Tonle Sap. Tap Paddle on the drum beat: on-beat strokes push your boat, and a crew that strokes together gets a sync boost. With 4 or more players you race in crews; with fewer, everyone races solo. First past the Royal Palace wins!' },
-  firework: { title: 'Firework Show', emoji: '🎆', seconds: SHOW_SECONDS, maxPlayers: SHOW_MAX, minPlayers: 1,
-    pitch: 'Water Festival fireworks you design yourself! Everyone has 50 seconds to draw a firework (a lotus, a naga, a heart, your name… anything). Then each drawing is launched over the Royal Palace and bursts into sparks, with no names shown. Give every firework 1–5 stars. The best-rated firework wins. Alone? Start it anyway: your firework still goes to the group as a GIF.' },
+  firework: { title: 'Firework Show', emoji: '🎆', seconds: SHOW_SECONDS, maxPlayers: SHOW_MAX,
+    pitch: 'Water Festival fireworks you design yourself! Everyone has 50 seconds to draw a firework (a lotus, a naga, a heart, your name… anything). Then each drawing is launched over the Royal Palace and bursts into sparks, with no names shown. Give every firework 1–5 stars. The best-rated firework wins. Every firework still goes to the group as a GIF.' },
   draw: { title: 'Draw & Guess', emoji: '🎨', seconds: 300, maxPlayers: 12,
     pitch: '3 rounds. Take turns drawing a secret word while everyone else guesses. Quick correct guesses score more, and the artist scores for every player who gets it.' },
   snake: { title: 'Snake Arena', emoji: '🐍', seconds: 90, maxPlayers: 8,
@@ -31,9 +31,9 @@ export const PARTY_GAMES = {
   battle: { title: 'Ship Battle', emoji: '🚀', seconds: 90, maxPlayers: 8,
     pitch: 'Everyone flies a ship in one arena. Your ship fires forward on its own, so steer to aim. 3 hits knock a ship out, and the most KOs wins.' },
   // Duo Mode: exactly 2 players on one team, sharing one score.
-  sync: { title: 'In Sync', emoji: '💞', seconds: SYNC_SECONDS, maxPlayers: 2, duo: true,
+  sync: { title: 'In Sync', emoji: '💞', seconds: SYNC_SECONDS, maxPlayers: 2, minPlayers: 2, duo: true,
     pitch: '8 questions about the two of you. Each round is about one player: they answer for themselves and their partner guesses. Matching answers score for the team, and 3 matches in a row doubles the points.' },
-  market: { title: 'Night Market Duo', emoji: '🍜', seconds: MARKET_SECONDS, maxPlayers: 2, duo: true,
+  market: { title: 'Night Market Duo', emoji: '🍜', seconds: MARKET_SECONDS, maxPlayers: 2, minPlayers: 2, duo: true,
     pitch: 'Run a noodle stall together for 90 seconds. One of you cooks, the other serves customers before they lose patience. Roles swap at half time, and the tips are shared.' },
 };
 export const DUO_GAMES = Object.keys(PARTY_GAMES).filter(g => PARTY_GAMES[g].duo);
@@ -134,5 +134,5 @@ export function results(p) {
 /** What clients are allowed to see. */
 export const publicState = p => p && ({
   id: p.id, game: p.game || 'reaction', duo: isDuo(p), minPlayers: minPlayersFor(p), summary: p.summary || null, status: p.status, seed: p.seed, startAt: p.startAt, endAt: p.endAt, claimed: p.claimed, startedBy: p.startedBy || null,
-  players: results(p).map(({ key, name, score, hits, fakes, kos, downs, place, crew }) => ({ key, name, score, hits, fakes, kos, downs, place, crew })),
+  players: results(p).map(({ key, name, score, hits, fakes, kos, downs, place, crew, bot }) => ({ key, name, score, hits, fakes, kos, downs, place, crew, ...(bot ? { bot: true } : {}) })),
 });

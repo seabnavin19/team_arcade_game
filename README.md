@@ -45,7 +45,7 @@ Telegram group ──/arcade, Play──▶ Cloudflare Worker (telegram/worker.j
 
 Send **`/party`** in the group and pick a game from the buttons, or go straight to one with **`/party boat`**, **`/party fireworks`**, **`/party draw`**, **`/party battle`**, **`/party snake`**, **`/party iq`** or **`/party reaction`**.
 The bot posts a card with a **Join the party** button and a 60-second countdown. A party needs at least 2 players, and one party runs per group at a time.
-As soon as 2 players are in, anyone in the lobby can tap **▶ Start now**. Everyone then gets a 3-second countdown instead of waiting out the full minute.
+Every party game except Duo Mode is played by 4. If fewer people join, 🤖 bots take the empty seats when it starts, so you can even play alone: anyone in the lobby can tap **▶ Start now** (Duo games still need both players). Bots run on the party server (`src/party/bots.js`) and play by the same rules: they steer and shoot in Ship Battle, chase food in Snake Arena, tap targets in Reaction Tap, answer Brain Race (about 6 in 10 right), paddle in the Boat Race, draw and rate in the Firework Show, and guess in Draw & Guess once there's a drawing. Bots never draw in Draw & Guess, so if you're the only person you draw all 3 rounds. They're decent but beatable, and their names start with 🤖 in the results.
 
 While a game runs it fills the whole screen. Ship Battle, Snake Arena and Reaction Tap also turn sideways on a phone held upright, so the arena uses the tall screen (text stays the right way up, and Snake's arrows mean "that way on screen"). Draw & Guess, the Firework Show and the Boat Race stay landscape, so drawings look the same for everyone. On a phone held sideways, buttons such as Paddle and Snake's arrows sit beside the game instead of under it.
 
@@ -238,7 +238,7 @@ To update the games, upload a new `arcade.js` with the same name. Players get it
 
 ```bash
 npm install
-npm test                       # 221 automated tests: game rules, saving and conflicts, ranking, the Telegram server, live parties, Duo Mode, the music room
+npm test                       # 231 automated tests: game rules, saving and conflicts, ranking, the Telegram server, live parties, Duo Mode, the music room
 npm run build                  # dist/ (Confluence) and site/ (Telegram / GitHub Pages)
 
 node dev/local-telegram.mjs    # Telegram version with a pretend Telegram + GitHub → http://localhost:8787/play?name=Dara

@@ -17,6 +17,35 @@ import { createRace, addRower, paddle, step as stepRace, snapshot as raceSnapsho
 
 import { isGif, fromBase64 } from '../src/party/firework-gif.js';
 import { createShow, addSparker, submit as fwSubmit, rate as fwRate, artFor, step as stepShow, snapshot as showSnapshot, showStats, showSummary, isOver as showOver, TICK_MS as SHOW_TICK_MS } from '../src/party/firework.js';
+import {
+  fillWithBots, botKeys, battleBotInput, snakeBotDir, reactionBotTap, quizBotAnswer, boatBotTap, drawBotGuess, drawBotChatter,
+  fireworkBotArt, fireworkBotReadyAt, fireworkBotStars,
+} from '../src/party/bots.js';
+
+// What bots do each tick in the real-time games (see src/party/bots.js).
+const BOTS = {
+  battle: (sim, p, now) => { const t = (now - p.startAt) / 1000; for (const k of botKeys(p)) setInput(sim, k, ...battleBotInput(sim, k, t)); },
+  snake: (sim, p) => { for (const k of botKeys(p)) { const d = snakeBotDir(sim, k); if (d) setDir(sim, k, d); } },
+  boat: (sim, p, now) => {
+    for (const beat of sim.beats) {
+      if (beat.resolved) continue;
+      for (const k of botKeys(p)) {
+        if (beat.taps[k] !== undefined) continue;
+        const at = boatBotTap(p.seed, k, beat.t);
+        if (at !== null && now >= at) paddle(sim, k, at, now);
+      }
+    }
+  },
+  firework: (sim, p, now) => {
+    for (const k of botKeys(p)) {
+      if (sim.phase === 'draw' && !sim.art[k] && now >= p.startAt + fireworkBotReadyAt(p.seed, k) * 1000) fwSubmit(sim, k, fireworkBotArt(p.seed, k), now);
+      if (sim.phase === 'show' && sim.order[sim.i] !== k && sim.ratings[sim.i]?.[k] === undefined) {
+        const r = fireworkBotStars(p.seed, k, sim.i);
+        if (now >= sim.showAt + r.at * 1000) fwRate(sim, k, sim.i, r.stars);
+      }
+    }
+  },
+};
 
 const LIVE = {
   // Firework Show: draw, then watch and rate. Drawings go out one at a time, on request.
@@ -95,7 +124,7 @@ export class PartyRoom {
 
     if (url.pathname === '/create') {
       if (isActive(this.party)) return Response.json({ created: false, party: publicState(this.party) });
-      this.stopBattle(); this.stopQuiz(); this.stopDraw(); this.stopSync(); this.syncQs = null; this.quiz = null; this.quizSent = { q: -1, r: -1 };
+      this.stopBattle(); this.stopQuiz(); this.stopDraw(); this.stopSync(); this.stopBots(); this.syncQs = null; this.quiz = null; this.quizSent = { q: -1, r: -1 };
       this.party = createParty({ id: crypto.randomUUID().slice(0, 8), chat: body.chat, seed: crypto.randomUUID(), secret: crypto.randomUUID(), now: this.now(), joinSeconds: body.joinSeconds, game: body.game });
       this.timeline = timelineFor(this.party);
       await this.save();
@@ -154,6 +183,7 @@ export class PartyRoom {
     const p = this.party;
     if (msg.type === 'ping') { ws.send(JSON.stringify({ type: 'pong', c: msg.c, s: this.now() })); return; }
     if (!p) return;
+    this.ensureBots(); // after a restart, the bots pick up where they were
     if (msg.type === 'fw-gif') { this.fireworkGif(me.key, msg); return; }
     if (LIVE[p.game]?.types.includes(msg.type)) {
       if (p.status === 'running' && this.ensureBattle()) {
@@ -262,17 +292,21 @@ export class PartyRoom {
       if (unit) Object.assign(unit, { score: pl.score || 0, kos: pl.kos || 0, downs: pl.downs || 0, hits: pl.hits || 0, ...(p.game === 'snake' ? { food: pl.hits || 0 } : {}) });
     }
     live.restore?.(this.battle, p, this.now());
-    let n = 0;
-    const every2s = Math.round(2000 / live.tickMs);
-    this.ticker = setInterval(() => {
-      if (!this.battle) return;
-      live.step(this.battle, this.now());
-      live.afterStep?.(this, this.battle);
-      this.broadcast({ type: 'snap', t: this.now(), ...live.snapshot(this.battle) });
-      if (live.isOver?.(this.battle)) { this.finishParty().catch(e => console.log('finish', e.message)); return; }
-      if (++n % every2s === 0) { this.copyBattleStats(); this.save(); } // keep scores safe
-    }, live.tickMs);
+    this.liveTicks = 0;
+    this.ticker = setInterval(() => this.liveTick(), live.tickMs);
     return true;
+  }
+
+  /** One tick of a real-time game: bots move, the simulation steps, everyone gets the new state. */
+  liveTick() {
+    const p = this.party, live = LIVE[p?.game];
+    if (!this.battle || !live) return;
+    BOTS[p.game]?.(this.battle, p, this.now());
+    live.step(this.battle, this.now());
+    live.afterStep?.(this, this.battle);
+    this.broadcast({ type: 'snap', t: this.now(), ...live.snapshot(this.battle) });
+    if (live.isOver?.(this.battle)) { this.finishParty().catch(e => console.log('finish', e.message)); return; }
+    if (++this.liveTicks % Math.round(2000 / live.tickMs) === 0) { this.copyBattleStats(); this.save(); } // keep scores safe
   }
 
   liveSnap() { const live = LIVE[this.party?.game]; return live && this.battle ? { type: 'snap', t: this.now(), ...live.snapshot(this.battle) } : null; }
@@ -429,6 +463,74 @@ export class PartyRoom {
     }
   }
 
+  // ---------- bots in the turn-based games (Reaction Tap, Brain Race, Draw & Guess) ----------
+  ensureBots() {
+    const p = this.party;
+    if (this.botTicker || !p || p.status !== 'running' || !botKeys(p).length || LIVE[p.game]) return;
+    if (!['reaction', 'quiz', 'draw'].includes(p.game)) return;
+    this.botDone ||= new Set();
+    this.botTicker = setInterval(() => { this.botTick().catch(e => console.log('botTick', e.message)); }, 100);
+  }
+
+  stopBots() { if (this.botTicker) clearInterval(this.botTicker); this.botTicker = null; this.botDone = null; }
+
+  async botTick() {
+    const p = this.party, now = this.now();
+    if (!p || p.status !== 'running') { this.stopBots(); return; }
+    const once = id => (this.botDone.has(id) ? false : (this.botDone.add(id), true));
+    if (p.game === 'reaction') {
+      const t = (now - p.startAt) / 1000;
+      for (let i = 0; i < this.timeline.length; i++) {
+        const tg = this.timeline[i];
+        if (tg.t > t) break;
+        if (t > tg.t + tg.life) continue;
+        for (const k of botKeys(p)) {
+          const age = reactionBotTap(p.seed, k, i, tg);
+          if (age === null || t - tg.t < age || !once(`r:${k}:${i}`)) continue;
+          const r = hit(p, this.timeline, k, i, age, now);
+          if (r.kind !== 'hit' && r.kind !== 'fake') continue;
+          await this.save();
+          this.broadcast({ type: 'event', kind: r.kind, i, key: k, name: p.players[k].name, points: r.points, party: publicState(p) });
+        }
+      }
+    } else if (p.game === 'quiz') {
+      if (!this.ensureQuiz()) return;
+      const ph = phaseAt(p.startAt, now);
+      if (ph.phase !== 'question') return;
+      for (const k of botKeys(p)) {
+        const a = quizBotAnswer(p.seed, k, ph.i, this.quiz[ph.i].correct);
+        if (!a || now < ph.opensAt + a.at * 1000 || !once(`q:${k}:${ph.i}`)) continue;
+        const r = quizAnswer(p, this.quiz, k, ph.i, a.c, now);
+        if (r.kind === 'invalid' || r.kind === 'already') continue;
+        await this.save();
+        this.broadcast({ type: 'answered', i: ph.i, count: Object.keys(p.answers?.[ph.i] || {}).length, of: Object.keys(p.players).length });
+      }
+    } else if (p.game === 'draw') {
+      const d = p.draw;
+      if (!d || d.phase !== 'drawing') return;
+      const into = (now - d.roundStart) / 1000, word = d.words[d.round];
+      for (const k of botKeys(p)) {
+        if (k === d.order[d.round] || d.guessed[k] != null) continue;
+        // now and then a wrong guess in the chat, like people do
+        for (const [n, at] of [[0, 6], [1, 16]]) {
+          if (into >= at + (k.charCodeAt(k.length - 1) % 4) && once(`c:${k}:${d.round}:${n}`) && (now + n + k.length) % 3 === 0) {
+            this.broadcast({ type: 'chat', name: p.players[k].name, key: k, text: drawBotChatter(p.seed, k, d.round, n, word) });
+          }
+        }
+        const at = drawBotGuess(p.seed, k, d.round);
+        // bots only "recognise" a drawing that exists: a few strokes, and some time after the first one
+        const lines = d.strokes.filter(o => o.t === 'stroke');
+        if (lines.length < 3 || d.firstStrokeAt == null) { if (lines.length && d.firstStrokeAt == null) d.firstStrokeAt = now; continue; }
+        if (at === null || (now - d.firstStrokeAt) / 1000 < at - 4 || !once(`g:${k}:${d.round}`)) continue;
+        const r = drawGuess(p, k, word, now);
+        if (r.kind !== 'right') continue;
+        await this.save();
+        this.broadcast({ type: 'guessed', key: k, name: p.players[k].name, pts: r.pts, first: r.first, party: publicState(p) });
+        if (guessersLeft(p) === 0) { await this.drawTick(true); return; }
+      }
+    }
+  }
+
   // ---------- timers ----------
   async alarm() {
     await this.load();
@@ -436,6 +538,7 @@ export class PartyRoom {
     if (!p) return;
     if (p.status === 'lobby') {
       const status = start(p);
+      if (status === 'running') fillWithBots(p, this.now()); // fewer than 4 people? bots take the empty seats
       await this.save();
       this.broadcast(this.stateMsg());
       if (status === 'running') {
@@ -443,6 +546,7 @@ export class PartyRoom {
         if (p.game === 'quiz') { this.quizSent = { q: -1, r: -1 }; this.ensureQuiz(); this.quizTick(); }
         if (p.game === 'sync') { this.ensureSync(); await this.save(); this.broadcast(syncRoundMsg(p, this.syncQs)); }
         if (p.game === 'draw') { setupDraw(p, this.now()); await this.save(); this.broadcast(this.stateMsg()); this.ensureDraw(); await this.drawTick(false); }
+        this.ensureBots();
         await this.ctx.storage.setAlarm(LIVE[p.game] ? p.endAt : p.endAt + 1500); // taps get a little grace (and a backstop for Draw & Guess)
       } else {
         const names = Object.values(p.players).map(x => x.name);
@@ -468,7 +572,7 @@ export class PartyRoom {
     const p = this.party;
     if (!p || p.status !== 'running') return;
     {
-      this.stopDraw();
+      this.stopDraw(); this.stopBots();
       if (LIVE[p.game]) { this.copyBattleStats(); this.stopBattle(); }
       if (p.game === 'quiz') { this.ensureQuiz(); this.quizTick(); this.stopQuiz(); }
       if (p.game === 'sync') { this.stopSync(); p.summary = syncSummary(p); }
@@ -496,7 +600,7 @@ export class PartyRoom {
       const lines = res.slice(0, 10).map(r => `${MEDALS[r.place - 1] || `${r.place}.`} <b>${esc(r.name)}</b> · ${detail(r)}`);
       await this.tg('sendMessage', {
         chat_id: p.chat, parse_mode: 'HTML',
-        text: [`${g.emoji} <b>${g.title} Party results</b> · ${res.length} players`, '', ...lines, '', res[0] ? `🎉 <b>${esc(res[0].name)}</b> wins the party!` : '', 'Rematch? Send /party'].join('\n'),
+        text: [`${g.emoji} <b>${g.title} Party results</b> · ${res.length} players${botKeys(p).length ? ` (${botKeys(p).length} 🤖)` : ''}`, '', ...lines, '', res[0] ? `🎉 <b>${esc(res[0].name)}</b> wins the party!` : '', 'Rematch? Send /party'].join('\n'),
       });
     }
   }

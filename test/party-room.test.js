@@ -24,6 +24,7 @@ function makeRoomNamespace() {
           getWebSockets: () => sockets, acceptWebSocket: ws => sockets.push(ws),
         };
         const obj = new PartyRoom(ctx, env, { now: () => clock, fetch: fakeFetch });
+        obj.ensureBots = () => {}; // no background bot timer in tests: a test drives the bots itself (botTick / liveTick)
         map.set(id, { obj, sockets, alarm: () => alarm, fetch: (url, init) => obj.fetch(new Request(url, init)) });
       }
       return map.get(id);
@@ -82,13 +83,32 @@ describe('live party', () => {
     expect(new URL(sent.find(s => s.method === 'answerCallbackQuery').body.url).hash).not.toMatch(/party/);
   });
 
-  it('cancels with fewer than 2 players', async () => {
+  it('one player gets 3 bots; nobody at all cancels', async () => {
     await webhook({ message: { text: '/party reaction', chat: GROUP, from: { id: 1, first_name: 'Dara' } } });
+    expect(lastText()).toMatch(/Bots fill the empty seats, so you can even play alone/);
     const r = rooms.get(String(GROUP.id));
+    const a = fakeWs('tg-1', 'Dara');
+    r.sockets.push(a);
     join(r.obj.party, { key: 'tg-1', name: 'Dara' }, clock);
     clock = r.alarm(); await r.obj.alarm();
-    expect(r.obj.party.status).toBe('cancelled');
-    expect(lastText()).toMatch(/only <b>Dara<\/b> joined/);
+    r.obj.stopBots();
+    expect(r.obj.party.status).toBe('running');
+    const players = a.inbox.findLast(m => m.type === 'state').party.players;
+    expect(players).toHaveLength(4);
+    expect(players.filter(x => x.bot).map(x => x.name)).toEqual([expect.stringMatching(/^🤖 /), expect.stringMatching(/^🤖 /), expect.stringMatching(/^🤖 /)]);
+    // the bots tap targets like players do (a little slower than a quick human)
+    const tl = timelineFor(r.obj.party);
+    r.obj.botDone = new Set();
+    for (let t = 0; t < 12; t += 0.1) { clock = r.obj.party.startAt + t * 1000; await r.obj.botTick(); }
+    expect(a.inbox.some(m => m.type === 'event' && m.kind === 'hit' && m.key.startsWith('bot-'))).toBe(true);
+    expect(Object.keys(r.obj.party.claimed).length).toBeGreaterThan(0);
+    expect(tl.length).toBeGreaterThan(10);
+
+    await webhook({ message: { text: '/party reaction', chat: { ...GROUP, id: -100777 }, from: { id: 1, first_name: 'Dara' } } });
+    const empty = rooms.get('-100777');
+    clock = empty.alarm(); await empty.obj.alarm();
+    expect(empty.obj.party.status).toBe('cancelled');
+    expect(lastText()).toMatch(/nobody joined/);
   });
 
   it('plays a full round: first tap wins, everyone sees it, results posted', async () => {
@@ -125,8 +145,6 @@ describe('live party', () => {
     const a = fakeWs('tg-1', 'Dara'), b = fakeWs('tg-2', 'Sokha');
     r.sockets.push(a, b);
     join(r.obj.party, { key: 'tg-1', name: 'Dara' }, clock);
-    await r.obj.webSocketMessage(a, JSON.stringify({ type: 'start-now' }));
-    expect(a.inbox.at(-1)).toMatchObject({ type: 'notice', text: expect.stringMatching(/at least 2/) });
     join(r.obj.party, { key: 'tg-2', name: 'Sokha' }, clock);
     clock += 5000;
     await r.obj.webSocketMessage(b, JSON.stringify({ type: 'start-now' }));
@@ -152,7 +170,7 @@ describe('live party', () => {
     const right = r.obj.quiz[0].correct;
     clock += 1500; await r.obj.webSocketMessage(b, JSON.stringify({ type: 'answer', i: 0, c: right }));
     clock += 1500; await r.obj.webSocketMessage(a, JSON.stringify({ type: 'answer', i: 0, c: (right + 1) % 4 }));
-    expect(b.inbox.at(-1)).toMatchObject({ type: 'answered', count: 2, of: 2 });
+    expect(b.inbox.at(-1)).toMatchObject({ type: 'answered', count: 2, of: 4 }); // 2 people + 2 bots
     clock = r.obj.party.startAt + 10500; r.obj.quizTick();
     const rev = a.inbox.find(m => m.type === 'reveal');
     expect(rev).toMatchObject({ i: 0, correct: right, firstName: 'Sokha' });
@@ -174,9 +192,10 @@ describe('live party', () => {
     join(r.obj.party, { key: 'tg-1', name: 'Dara' }, clock); join(r.obj.party, { key: 'tg-2', name: 'Sokha' }, clock);
     clock = r.alarm(); await r.obj.alarm();
     expect(r.obj.ticker).toBeTruthy();
-    expect(a.inbox.at(-1)).toMatchObject({ type: 'snap', who: ['tg-1', 'tg-2'] });
+    expect(a.inbox.at(-1)).toMatchObject({ type: 'snap', who: ['tg-1', 'tg-2', 'bot-1', 'bot-2'] });
     const { step } = await import('../src/party/snake.js');
     const g = r.obj.battle; g.food = [];
+    for (const k of ['bot-1', 'bot-2']) Object.assign(g.snakes[k], { alive: false, respawn: 999 }); // bots off the board for this crash test
     Object.assign(g.snakes['tg-1'], { body: [[10, 9], [9, 9], [8, 9], [7, 9]], dir: 'right', queue: [] });
     Object.assign(g.snakes['tg-2'], { body: [[11, 12], [11, 11], [11, 10], [11, 9], [11, 8]], dir: 'down', queue: [] });
     await r.obj.webSocketMessage(b, JSON.stringify({ type: 'dir', d: 'left' })); // Sokha turns away from the wall
@@ -193,15 +212,15 @@ describe('live party', () => {
     await webhook({ message: { text: '/party draw', chat: GROUP, from: { id: 1, first_name: 'Dara' } } });
     const r = rooms.get(String(GROUP.id));
     expect(r.obj.party.game).toBe('draw');
-    const a = fakeWs('tg-1', 'Dara'), b = fakeWs('tg-2', 'Sokha'), c = fakeWs('tg-3', 'Navin');
-    r.sockets.push(a, b, c);
-    join(r.obj.party, { key: 'tg-1', name: 'Dara' }, clock); join(r.obj.party, { key: 'tg-2', name: 'Sokha' }, clock + 1); join(r.obj.party, { key: 'tg-3', name: 'Navin' }, clock + 2);
+    const a = fakeWs('tg-1', 'Dara'), b = fakeWs('tg-2', 'Sokha'), c = fakeWs('tg-3', 'Navin'), e = fakeWs('tg-4', 'Mony');
+    r.sockets.push(a, b, c, e);
+    join(r.obj.party, { key: 'tg-1', name: 'Dara' }, clock); join(r.obj.party, { key: 'tg-2', name: 'Sokha' }, clock + 1); join(r.obj.party, { key: 'tg-3', name: 'Navin' }, clock + 2); join(r.obj.party, { key: 'tg-4', name: 'Mony' }, clock + 3);
     clock = r.alarm(); await r.obj.alarm();
     r.obj.stopDraw(); // drive rounds by hand
     const d = r.obj.party.draw, word = d.words[0];
     expect(d.order).toHaveLength(3);
-    const sock = { 'tg-1': a, 'tg-2': b, 'tg-3': c };
-    const artist = sock[d.order[0]], [g1, g2] = Object.keys(sock).filter(k => k !== d.order[0]).map(k => sock[k]);
+    const sock = { 'tg-1': a, 'tg-2': b, 'tg-3': c, 'tg-4': e };
+    const artist = sock[d.order[0]], [g1, g2, g3] = Object.keys(sock).filter(k => k !== d.order[0]).map(k => sock[k]);
     const roundFor = ws => ws.inbox.filter(m => m.type === 'round').at(-1);
     expect(roundFor(artist)).toMatchObject({ i: 0, n: 3, artist: d.order[0], word });
     expect(roundFor(g1)).not.toHaveProperty('word');
@@ -229,6 +248,8 @@ describe('live party', () => {
     expect(g1.inbox.find(m => m.type === 'you-guessed')).toMatchObject({ first: true, word });
     expect(g2.inbox.some(m => m.type === 'chat' && m.text.toLowerCase() === word)).toBe(false); // the answer never leaks into chat
     await r.obj.webSocketMessage(g2, JSON.stringify({ type: 'guess', text: word }));
+    expect(artist.inbox.find(m => m.type === 'reveal')).toBeUndefined(); // one guesser still to go
+    await r.obj.webSocketMessage(g3, JSON.stringify({ type: 'guess', text: word }));
     expect(artist.inbox.find(m => m.type === 'reveal')).toMatchObject({ i: 0, word });
 
     // round 2: the next artist gets the next word
@@ -341,9 +362,9 @@ describe('live party', () => {
     expect(lastText()).toMatch(/Didn't draw: Navin/);
   });
 
-  it('a Firework Show can be played alone: the GIF still goes to the group', async () => {
+  it('a Firework Show alone: 3 bots draw, rate, and every firework goes to the group', async () => {
     await webhook({ message: { text: '/party fireworks', chat: GROUP, from: { id: 1, first_name: 'Dara' } } });
-    expect(lastText()).toMatch(/Play alone or with up to 10 players/);
+    expect(lastText()).toMatch(/you can even play alone/);
     const r = rooms.get(String(GROUP.id));
     const w = fakeWs('tg-1', 'Dara');
     r.sockets.push(w);
@@ -351,20 +372,58 @@ describe('live party', () => {
     await r.obj.webSocketMessage(w, JSON.stringify({ type: 'start-now' }));
     clock = r.alarm(); await r.obj.alarm();
     expect(r.obj.party.status).toBe('running');
+    expect(Object.keys(r.obj.party.players)).toHaveLength(4);
     clearInterval(r.obj.ticker); r.obj.ticker = null;
     const sim = r.obj.battle;
-    const { step, COLORS } = await import('../src/party/firework.js');
+    const { COLORS } = await import('../src/party/firework.js');
     const { renderFireworkGif, toBase64 } = await import('../src/party/firework-gif.js');
     await r.obj.webSocketMessage(w, JSON.stringify({ type: 'fw-submit', strokes: [{ c: COLORS[2], pts: [300, 200, 500, 200] }] }));
-    clock = sim.drawEnd + 2000; step(sim, clock); r.obj.fireworkEvents(sim);
-    const ask = w.inbox.findLast(m => m.type === 'fw-render');
-    await r.obj.webSocketMessage(w, JSON.stringify({ type: 'fw-gif', i: 0, data: toBase64(renderFireworkGif(ask.art, { seed: ask.seed })) }));
-    clock += 9000; step(sim, clock); r.obj.fireworkEvents(sim);
-    const before = sent.length;
-    await r.obj.finishParty();
+    // the bots send their drawings within 25 s; once everyone's ready the show starts early
+    clock = r.obj.party.startAt + 25000; r.obj.liveTick();
+    expect(Object.keys(sim.art)).toHaveLength(4);
+    for (let k = 0; k < 4 && sim.phase === 'draw'; k++) { clock += 2000; r.obj.liveTick(); }
+    expect(sim.phase).toBe('show');
+    // each firework: the page renders its GIF, bots rate it, it goes to the group
+    const answered = new Set(), before = sent.length;
+    for (let guard = 0; guard < 80 && !sim.over; guard++) {
+      for (const ask of w.inbox.filter(m => m.type === 'fw-render' && !answered.has(m.i))) {
+        answered.add(ask.i);
+        await r.obj.webSocketMessage(w, JSON.stringify({ type: 'fw-gif', i: ask.i, data: toBase64(renderFireworkGif(ask.art, { seed: ask.seed })) }));
+      }
+      clock += 500; r.obj.liveTick();
+    }
+    expect(sim.over).toBe(true); // the room finishes the party by itself and posts the results
+    const results = () => sent.slice(before).some(m => /4 fireworks/.test(m.body?.text || ''));
+    for (let k = 0; k < 200 && !results(); k++) await new Promise(res => setTimeout(res, 10));
     const posted = sent.slice(before);
-    expect(posted.map(m => m.method)).toEqual(['sendAnimation']); // just the GIF, no ranking for one
-    expect(posted[0].body.caption).toMatch(/🎆 <b>A firework<\/b> by <b>Dara<\/b>\nSolo show/);
+    expect(posted.filter(m => m.method === 'sendAnimation')).toHaveLength(4);
+    const mine = posted.find(m => m.method === 'sendAnimation' && /by <b>Dara<\/b>/.test(m.body.caption));
+    expect(mine.body.caption).toMatch(/from 3 ratings/); // all three bots rated Dara's firework
+    expect(posted.at(-1).body.text).toMatch(/Firework Show<\/b> · 4 fireworks/);
+  });
+
+  it('Draw & Guess alone: you draw, the bots guess once there is a drawing', async () => {
+    await webhook({ message: { text: '/party draw', chat: GROUP, from: { id: 1, first_name: 'Dara' } } });
+    const r = rooms.get(String(GROUP.id));
+    const a = fakeWs('tg-1', 'Dara');
+    r.sockets.push(a);
+    join(r.obj.party, { key: 'tg-1', name: 'Dara' }, clock);
+    clock = r.alarm(); await r.obj.alarm();
+    r.obj.stopDraw();
+    const d = r.obj.party.draw;
+    expect(d.order).toEqual(['tg-1', 'tg-1', 'tg-1']);
+    r.obj.party.seed = 'fixed-seed'; // which bots guess, and when, comes from the seed
+    r.obj.botDone = new Set();
+    for (let t = 0; t < 4; t += 0.5) { clock = d.roundStart + t * 1000; await r.obj.botTick(); }
+    for (let t = 4; t < 49; t += 0.5) { clock = d.roundStart + t * 1000; await r.obj.botTick(); }
+    expect(Object.keys(d.guessed)).toHaveLength(0); // nothing drawn, nothing guessed
+    d.roundEnd = clock + 60000; // a fresh round
+    for (let i = 1; i <= 3; i++) await r.obj.webSocketMessage(a, JSON.stringify({ type: 'stroke', id: i, c: '#ff0000', w: 6, pts: [10 * i, 10, 50, 60] }));
+    const drawnAt = clock;
+    for (let t = 0; t < 40; t += 0.5) { clock = drawnAt + t * 1000; await r.obj.botTick(); }
+    expect(Object.keys(d.guessed).length).toBeGreaterThan(0);
+    expect(a.inbox.some(m => m.type === 'guessed' && m.name.startsWith('🤖'))).toBe(true);
+    expect(r.obj.party.players['tg-1'].score).toBeGreaterThan(0); // the artist scores for every bot that gets it
   });
 
   it('ping gets the server time back (for clock sync)', async () => {

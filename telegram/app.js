@@ -15,7 +15,8 @@ import { weekKey, previousWeekKey, weekLabel } from '../src/core/time.js';
 import { mergeEntry, emptyBoard } from '../src/core/store.js';
 import { rankBoard, championBoard } from '../src/core/ranking.js';
 import { GAME_META, GAME_IDS, checkRun } from '../src/games/meta.js';
-import { JOIN_SECONDS, MIN_PLAYERS, PARTY_GAMES, DUO_GAMES } from '../src/party/rules.js';
+import { JOIN_SECONDS, PARTY_GAMES, DUO_GAMES } from '../src/party/rules.js';
+import { PARTY_SIZE } from '../src/party/bots.js';
 
 const SESSION_HOURS = 12;
 const RUN_MINUTES = 45;
@@ -140,7 +141,7 @@ export function createHandler({ fetch: fetchImpl = (...a) => fetch(...a), now = 
     }
     await c.tg('sendMessage', {
       chat_id: chat.id, parse_mode: 'HTML', ...thread,
-      text: [`${g.emoji} <b>${g.title} Party!</b> Starts in ${secs} seconds and lasts ${g.seconds} seconds.`, `Tap <b>Join the party</b> on the card above. ${g.pitch}`, g.minPlayers === 1 ? `Play alone or with up to ${g.maxPlayers} players. Anyone in the lobby can tap <b>Start now</b>.` : `Needs at least ${MIN_PLAYERS} players${g.maxPlayers < 50 ? `, up to ${g.maxPlayers}` : ''}. Once ${MIN_PLAYERS} are in, anyone in the lobby can tap <b>Start now</b>.`].join('\n'),
+      text: [`${g.emoji} <b>${g.title} Party!</b> Starts in ${secs} seconds and lasts ${g.seconds} seconds.`, `Tap <b>Join the party</b> on the card above. ${g.pitch}`, `Up to ${g.maxPlayers} players. Fewer than ${PARTY_SIZE}? 🤖 Bots fill the empty seats, so you can even play alone. Anyone in the lobby can tap <b>Start now</b>.`].join('\n'),
     });
     return true;
   }

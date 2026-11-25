@@ -12,11 +12,12 @@ function running() {
 const at = (p, tg, extra) => p.startAt + (tg.t + extra) * 1000;
 
 describe('party rules', () => {
-  it('needs at least two players', () => {
+  it('one player can start (bots fill the rest); nobody means cancelled', () => {
     const p = createParty({ id: 'p', chat: -1, seed: 's', now: T0 });
+    expect(MIN_PLAYERS).toBe(1);
+    expect(start({ ...p, players: {} })).toBe('cancelled');
     join(p, A, T0);
-    expect(MIN_PLAYERS).toBe(2);
-    expect(start(p)).toBe('cancelled');
+    expect(start(p)).toBe('running');
   });
   it('everyone gets the same targets for a party, different per party', () => {
     const a = createParty({ id: 'x', chat: 1, seed: 'one', now: 0 }), b = createParty({ id: 'y', chat: 1, seed: 'two', now: 0 });
@@ -76,10 +77,12 @@ describe('party rules', () => {
 import { startNow } from '../src/party/rules.js';
 describe('start now', () => {
   const T = 5_000_000;
-  it('starts in 3 seconds once 2 players are in, keeping the round length', () => {
+  it('starts in 3 seconds, keeping the round length (a duo still needs both)', () => {
+    const duo = createParty({ id: 'd', chat: -1, seed: 's', now: T, game: 'sync' });
+    join(duo, A, T);
+    expect(startNow(duo, 'a', T + 5000)).toMatchObject({ ok: false, reason: expect.stringMatching(/at least 2/) });
     const p = createParty({ id: 'p', chat: -1, seed: 's', now: T, game: 'battle' });
     join(p, A, T);
-    expect(startNow(p, 'a', T + 5000)).toMatchObject({ ok: false, reason: expect.stringMatching(/at least 2/) });
     join(p, B, T + 6000);
     const length = p.endAt - p.startAt;
     expect(startNow(p, 'b', T + 7000).ok).toBe(true);

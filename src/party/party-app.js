@@ -2,6 +2,7 @@
 
 import { timelineFor, PARTY_GAMES } from './rules.js';
 import { createBattleView } from './battle-view.js';
+import { PARTY_SIZE } from './bots.js';
 import { fitLayout, fromScreen, createSpace } from './screen-fit.js';
 import { createQuizView } from './quiz-view.js';
 import { createSnakeView } from './snake-view.js';
@@ -240,9 +241,11 @@ export function createPartyApp(root, { api, token, sound, onExit, WebSocketImpl 
       const inLobby = party.status === 'lobby';
       el.crews.innerHTML = party.game === 'boat' && inLobby ? crewLobbyHtml(party, me, assignCrews) : '';
       const startingSoon = inLobby && party.startedBy;
-      el.sub.textContent = party.duo ? `${n} of 2 players in · one team, one score` : `${n} ${n === 1 ? 'player' : 'players'} in · needs at least 2`;
-      el.startnow.hidden = !(inLobby && !startingSoon && n >= (party.minPlayers || 2) && party.players.some(p => p.key === me));
-      el.note.textContent = startingSoon ? `${party.startedBy} started the ${party.duo ? 'game' : 'party'}!` : (inLobby && n < (party.minPlayers || 2) ? (party.duo ? 'Waiting for your partner to tap Join the duo…' : 'Waiting for one more player…') : '');
+      const seats = PARTY_SIZE - n;
+      el.sub.textContent = party.duo ? `${n} of 2 players in · one team, one score`
+        : `${n} ${n === 1 ? 'player' : 'players'} in${inLobby && seats > 0 ? ` · 🤖 ${seats} ${seats === 1 ? 'bot' : 'bots'} will join to make ${PARTY_SIZE}` : ''}`;
+      el.startnow.hidden = !(inLobby && !startingSoon && n >= (party.minPlayers || 1) && party.players.some(p => p.key === me));
+      el.note.textContent = startingSoon ? `${party.startedBy} started the ${party.duo ? 'game' : 'party'}!` : (inLobby && n < (party.minPlayers || 1) ? 'Waiting for your partner to tap Join the duo…' : '');
       if (party.duo) {
         const team = party.players.map(pl => esc(pl.key === me ? 'You' : pl.name)).join(' ♥ ');
         const sc = party.players[0]?.score || 0;

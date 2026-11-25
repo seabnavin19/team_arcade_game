@@ -69,11 +69,13 @@ export const guessPoints = (secondsLeft, first) => 100 + Math.round(200 * Math.m
 /**
  * Set up the 3 rounds when the party starts. Players take turns as the artist
  * in a random order: with 2 players that's A, B, A; with more than 3, three
- * different people draw.
+ * different people draw. Bots never draw; if you're the only person, you draw all 3.
  */
 export function setupDraw(p, now) {
   const rng = createRng(`artists:${p.secret || p.seed}`);
-  const players = Object.entries(p.players).sort((a, b) => a[1].joinedAt - b[1].joinedAt).map(([k]) => k);
+  // only people draw: a bot can't draw a secret word (bots guess instead)
+  const people = Object.entries(p.players).filter(([, v]) => !v.bot);
+  const players = (people.length ? people : Object.entries(p.players)).sort((a, b) => a[1].joinedAt - b[1].joinedAt).map(([k]) => k);
   for (let i = players.length - 1; i > 0; i--) { const j = Math.floor(rng.next() * (i + 1)); [players[i], players[j]] = [players[j], players[i]]; }
   const order = Array.from({ length: ROUNDS }, (_, i) => players[i % players.length]);
   p.draw = { order, words: pickWords(p.secret || p.seed, order.length), round: -1, phase: 'reveal', revealEnd: now, guessed: {}, strokes: [], points: 0, hint: false };
@@ -83,7 +85,7 @@ export function setupDraw(p, now) {
 export function beginRound(p, now) {
   const d = p.draw;
   d.round++;
-  Object.assign(d, { phase: 'drawing', roundStart: now, roundEnd: now + ROUND_SECONDS * 1000, guessed: {}, strokes: [], points: 0, hint: false, skipped: false });
+  Object.assign(d, { phase: 'drawing', roundStart: now, roundEnd: now + ROUND_SECONDS * 1000, guessed: {}, strokes: [], points: 0, hint: false, skipped: false, firstStrokeAt: null });
 }
 
 /** A guesser's guess. Returns { kind: 'right'|'close'|'wrong'|'ignored', pts, first }. */

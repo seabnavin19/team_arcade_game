@@ -1,4 +1,5 @@
-// Local preview of any party game against bot players, no server needed.
+// Local preview of any party game, no server needed: you play with the party's
+// real bots (they fill a game up to 4).
 // It runs the real game server (telegram/party-room.js) inside the page, with
 // pretend network lag. Build: node dev/party-demo.mjs, then open
 // dist/party-demo.html#battle (or #snake, #reaction, #quiz, #boat, #firework,
@@ -15,7 +16,7 @@ style.textContent = css;
 document.head.appendChild(style);
 document.body.classList.add('ta-fullpage');
 
-const LAG = 150; // round trip, ms
+const LAG = 150; // round trip, ms (pretend network)
 const later = f => setTimeout(f, LAG / 2);
 const game = location.hash.slice(1);
 const mount = document.getElementById('team-arcade');
@@ -56,25 +57,9 @@ async function boot() {
     return raw => later(() => room.webSocketMessage(server, raw));
   }
 
-  const bots = duo ? [['b1', 'Sophea']] : [['b1', 'Sophea'], ['b2', 'Dara'], ['b3', 'Vuthy']];
-  for (const [key, name] of bots) {
-    let send = () => {};
-    const dirs = ['up', 'right', 'down', 'left'];
-    let t = Math.random() * 6;
-    const act = () => {
-      const p = room.party;
-      if (p?.status !== 'running') return;
-      t += 0.3;
-      if (game === 'battle') send(JSON.stringify({ type: 'input', mx: Math.cos(t * 0.7), my: Math.sin(t * 0.9) }));
-      if (game === 'snake' && Math.random() < 0.3) send(JSON.stringify({ type: 'dir', d: dirs[Math.floor(Math.random() * 4)] }));
-      if (game === 'boat' && Math.random() < 0.7) send(JSON.stringify({ type: 'paddle' }));
-    };
-    send = await connect({ key, name }, raw => {
-      const m = JSON.parse(raw);
-      if (m.type === 'question' && Math.random() < 0.8) setTimeout(() => send(JSON.stringify({ type: 'answer', q: m.q, c: Math.floor(Math.random() * 4) })), 1500 + Math.random() * 4000);
-    });
-    setInterval(act, 300);
-  }
+  // Non-Duo games: the room's own bots fill the seats when it starts (src/party/bots.js).
+  // Duo games need a partner, so a stand-in one joins (and just watches).
+  if (duo) await connect({ key: 'partner', name: 'Sophea' }, () => {});
 
   class FakeWS {
     constructor() {
