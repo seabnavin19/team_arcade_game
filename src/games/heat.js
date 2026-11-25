@@ -25,7 +25,7 @@ export default {
   id: 'heat',
   title: 'Street Heat',
   blurb: 'Grab the loot, lose the cops, bank it at the hideout. 90 seconds in a neon city.',
-  controls: 'Arrows/WASD drive · touch: drag to steer · mouse: hold to drive',
+  controls: 'Phone: tilt to steer, hold to brake · Arrows/WASD · mouse: hold to drive',
   length: '90 sec',
   better: 'higher',
   plausible: (score, seconds) => (score <= 30000 && seconds >= SOLO_SECONDS - 2 ? { ok: true } : { ok: false }),
@@ -62,7 +62,7 @@ export default {
         }
         parts.update(dt); floats.update(dt);
         shake = Math.max(0, shake - dt * 30);
-        if (sim.over) { loop.stop(); sound.end(); onEnd(me.banked, resultMeta(me)); }
+        if (sim.over) { loop.stop(); controls.destroy(); sound.end(); onEnd(me.banked, resultMeta(me)); }
       },
       render() {
         const t = sim.time;
@@ -101,6 +101,6 @@ export default {
       },
     });
     loop.start();
-    return { stop: () => loop.stop() };
+    return { stop: () => { loop.stop(); controls.destroy(); } };
   },
 };

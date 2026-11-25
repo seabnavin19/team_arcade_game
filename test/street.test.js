@@ -135,3 +135,26 @@ describe('Street Heat solo game', () => {
     expect(checkRun('heat', 99999, {}, 90)).toMatch(/outside/);
   });
 });
+
+describe('Street Heat tilt steering', () => {
+  it('steers like a wheel whichever way the phone is held, on Android and iPhone', async () => {
+    const { tiltSteer } = await import('../src/games/street-draw.js');
+    const g = 9.81, s20 = Math.sin(20 * Math.PI / 180) * g;
+    // Android, held upright (gravity reads +y): tipping the right side down → steer right
+    expect(tiltSteer(-s20, g, 3, 0)).toBeGreaterThan(0.5);
+    expect(tiltSteer(s20, g, 3, 0)).toBeLessThan(-0.5);
+    // iPhone reports everything the other way round: same turn, same steering
+    expect(tiltSteer(s20, -g, -3, 0)).toBeGreaterThan(0.5);
+    // lying almost flat (gravity mostly on z) still works on both
+    expect(tiltSteer(-s20, 1, g, 0)).toBeGreaterThan(0.5);
+    expect(tiltSteer(s20, -1, -g, 0)).toBeGreaterThan(0.5);
+    // held sideways (screen turned 90° either way): the long side is now left–right
+    expect(tiltSteer(g * 0.5, s20, 6, 90)).toBeGreaterThan(0.5);
+    expect(tiltSteer(-g * 0.5, -s20, 6, -90)).toBeGreaterThan(0.5);
+    expect(tiltSteer(-g * 0.5, -s20, -6, 90)).toBeGreaterThan(0.5); // iPhone, sideways
+    // level: straight ahead; tipped a lot: full lock, never more
+    expect(tiltSteer(0.3, g, 2, 0)).toBe(0);
+    expect(tiltSteer(-g, 1, 1, 0)).toBe(1);
+    expect(tiltSteer(NaN, 0, 0, 0)).toBe(0);
+  });
+});

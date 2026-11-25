@@ -170,18 +170,65 @@ export function drawPointer(ctx, cam, from, to, color, label) {
 }
 
 // ---------------------------------------------------------------- controls
+const FULL_LOCK = Math.sin((32 * Math.PI) / 180); // tilting the phone ~32° is full steering
+
 /**
- * Driving controls for keyboard, touch and mouse → [throttle, steer].
- * Keys: ↑/W go, ↓/S brake & reverse, ←→/AD steer.
- * Touch: put a thumb down anywhere and drag: the car drives the way you point.
- * Mouse: hold the button and the car drives toward the pointer.
+ * Steering from the phone's tilt, like a steering wheel: −1 (full left) … 1 (full right).
+ * ax, ay, az: accelerationIncludingGravity (m/s²) in the phone's own axes; angle:
+ * screen rotation (0 upright, 90 or −90 sideways). Phones disagree on the sign
+ * (iPhones report the opposite of Android), so it's worked out from gravity
+ * itself: held normally, "down" reads positive on one and negative on the other.
+ */
+export function tiltSteer(ax, ay, az, angle) {
+  if (!Number.isFinite(ax) || !Number.isFinite(ay)) return 0;
+  const a = ((Math.round(angle / 90) * 90) % 360 + 360) % 360;
+  // gravity along the screen's left–right and bottom–top axes, whichever way the phone is held
+  const sx = a === 0 ? ax : a === 90 ? -ay : a === 180 ? -ax : ay;
+  const sy = a === 0 ? ay : a === 90 ? ax : a === 180 ? -ay : -ax;
+  const sign = sy + (Number.isFinite(az) ? az : 0) >= 0 ? -1 : 1;
+  const g = Math.max(-1, Math.min(1, (sign * sx) / 9.81 / FULL_LOCK));
+  return Math.abs(g) < 0.08 ? 0 : g; // small dead zone so a level phone drives straight
+}
+
+/**
+ * Driving controls for tilt, touch, keyboard and mouse → [throttle, steer].
+ * Phone: tilt it like a steering wheel; the car drives forward by itself and
+ * holding a finger on the screen brakes (and reverses once stopped). The
+ * TILT/DRAG button switches to a thumb joystick instead.
+ * Keys: ↑/W go, ↓/S brake & reverse, ←→/AD steer. Mouse: hold the button and
+ * the car drives toward the pointer.
  * `toWorld(x, y)` turns a pointer position into city coordinates; `cssScale()`
  * is screen pixels per game unit (for the joystick size).
  */
 export function createDriveControls(input, { toWorld, cssScale = () => 1 }) {
-  let joy = null, mouseDown = false;
+  let joy = null, mouseDown = false, braking = false;
+  const touch = typeof window !== 'undefined' && (window.matchMedia?.('(hover: none) and (pointer: coarse)').matches || navigator.maxTouchPoints > 0);
+  const tilt = { on: touch, live: false, steer: 0, asked: false, usedAt: 0 };
+  const button = { x: 12, y: 112, w: 74, h: 30 };
+  const screenAngle = () => (typeof screen !== 'undefined' && screen.orientation ? screen.orientation.angle : Number(window.orientation) || 0);
+  const onMotion = e => {
+    const g = e.accelerationIncludingGravity;
+    if (!g || g.x == null) return;
+    tilt.live = true;
+    const s = tiltSteer(g.x, g.y, g.z, screenAngle());
+    tilt.steer = tilt.steer + (s - tilt.steer) * 0.35; // smooth out hand shake
+  };
+  if (typeof window !== 'undefined') window.addEventListener('devicemotion', onMotion);
+  // iPhones ask for permission, and only after a tap
+  const askMotion = () => {
+    if (tilt.asked || !tilt.on) return;
+    tilt.asked = true;
+    const D = typeof DeviceMotionEvent !== 'undefined' ? DeviceMotionEvent : null;
+    if (D && typeof D.requestPermission === 'function') D.requestPermission().then(r => { if (r !== 'granted') tilt.on = false; }).catch(() => { tilt.on = false; });
+  };
+  const tiltActive = () => tilt.on && tilt.live;
+  const onButton = pt => touch && pt.x >= button.x && pt.x <= button.x + button.w && pt.y >= button.y && pt.y <= button.y + button.h;
+
   input.on('pointerdown', pt => {
     if (pt.type === 'mouse') { mouseDown = true; joy = null; return; }
+    if (onButton(pt)) { tilt.on = !tilt.on; askMotion(); return; }
+    askMotion();
+    if (tiltActive()) { braking = true; joy = null; return; }
     joy = { ox: pt.x, oy: pt.y, cx: pt.x, cy: pt.y };
   });
   input.on('pointermove', pt => {
@@ -190,7 +237,7 @@ export function createDriveControls(input, { toWorld, cssScale = () => 1 }) {
     const R = 46 / cssScale(), dx = joy.cx - joy.ox, dy = joy.cy - joy.oy, d = Math.hypot(dx, dy);
     if (d > R) { joy.ox = joy.cx - (dx / d) * R; joy.oy = joy.cy - (dy / d) * R; }
   });
-  input.on('pointerup', () => { joy = null; mouseDown = false; });
+  input.on('pointerup', () => { askMotion(); joy = null; mouseDown = false; braking = false; });
   const towards = (car, ang, mag) => {
     let diff = ang - car.a;
     while (diff > Math.PI) diff -= 2 * Math.PI;
@@ -205,6 +252,10 @@ export function createDriveControls(input, { toWorld, cssScale = () => 1 }) {
       const up = k.has('ArrowUp') || k.has('w') || k.has('W'), down = k.has('ArrowDown') || k.has('s') || k.has('S');
       const left = k.has('ArrowLeft') || k.has('a') || k.has('A'), right = k.has('ArrowRight') || k.has('d') || k.has('D');
       if (up || down || left || right) return [(up ? 1 : 0) - (down ? 1 : 0), (right ? 1 : 0) - (left ? 1 : 0)];
+      if (tiltActive()) {
+        if (Math.abs(tilt.steer) > 0.2) tilt.usedAt = performance.now();
+        return [braking ? -1 : 1, tilt.steer];
+      }
       if (joy) {
         const R = 46 / cssScale(), dx = joy.cx - joy.ox, dy = joy.cy - joy.oy, d = Math.hypot(dx, dy);
         if (d < R * 0.18) return [0, 0];
@@ -218,14 +269,43 @@ export function createDriveControls(input, { toWorld, cssScale = () => 1 }) {
       }
       return [0, 0];
     },
-    /** draw the thumb joystick (screen coordinates) */
+    /** joystick, tilt meter and the TILT/DRAG switch (screen coordinates) */
     draw(ctx) {
-      if (!joy) return;
-      const R = 46 / cssScale(), dx = joy.cx - joy.ox, dy = joy.cy - joy.oy, d = Math.hypot(dx, dy), m = d > R ? R / d : 1;
       ctx.save();
-      ctx.strokeStyle = 'rgba(236,233,255,.3)'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(joy.ox, joy.oy, R, 0, Math.PI * 2); ctx.stroke();
-      ctx.fillStyle = 'rgba(255,61,154,.4)'; ctx.beginPath(); ctx.arc(joy.ox + dx * m, joy.oy + dy * m, R * 0.42, 0, Math.PI * 2); ctx.fill();
+      if (touch) {
+        // the switch
+        const on = tilt.on;
+        ctx.fillStyle = on ? 'rgba(255,61,154,.85)' : 'rgba(21,18,46,.85)';
+        ctx.strokeStyle = on ? '#ff3d9a' : 'rgba(236,233,255,.35)'; ctx.lineWidth = 1.5;
+        roundRect(ctx, button.x, button.y, button.w, button.h, 15); ctx.fill(); ctx.stroke();
+        ctx.fillStyle = '#fff'; ctx.font = '800 12px system-ui, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillText(on ? '📱 TILT' : '👆 DRAG', button.x + button.w / 2, button.y + button.h / 2 + 1);
+        if (tiltActive()) {
+          // a little steering wheel that turns with the phone
+          const cx = button.x + button.w + 26, cy = button.y + button.h / 2;
+          ctx.translate(cx, cy); ctx.rotate(tilt.steer * 1.2);
+          ctx.strokeStyle = 'rgba(236,233,255,.8)'; ctx.lineWidth = 3;
+          ctx.beginPath(); ctx.arc(0, 0, 11, 0, Math.PI * 2); ctx.stroke();
+          ctx.beginPath(); ctx.moveTo(-11, 0); ctx.lineTo(11, 0); ctx.moveTo(0, 0); ctx.lineTo(0, 11); ctx.stroke();
+        }
+      }
+      ctx.restore();
+      ctx.save();
+      if (tiltActive() && performance.now() - tilt.usedAt > 4000) {
+        // until they've steered a bit: how it works
+        ctx.font = '800 12px system-ui, sans-serif'; ctx.textAlign = 'left'; ctx.fillStyle = 'rgba(236,233,255,.85)';
+        ctx.fillText('Tilt the phone to steer · hold the screen to brake', button.x, button.y + button.h + 18);
+      } else if (touch && tilt.on && !tilt.live && tilt.asked) {
+        ctx.font = '800 12px system-ui, sans-serif'; ctx.textAlign = 'left'; ctx.fillStyle = 'rgba(236,233,255,.7)';
+        ctx.fillText('No tilt sensor here: tap the button to drag instead', button.x, button.y + button.h + 18);
+      }
+      if (joy) {
+        const R = 46 / cssScale(), dx = joy.cx - joy.ox, dy = joy.cy - joy.oy, d = Math.hypot(dx, dy), m = d > R ? R / d : 1;
+        ctx.strokeStyle = 'rgba(236,233,255,.3)'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(joy.ox, joy.oy, R, 0, Math.PI * 2); ctx.stroke();
+        ctx.fillStyle = 'rgba(255,61,154,.4)'; ctx.beginPath(); ctx.arc(joy.ox + dx * m, joy.oy + dy * m, R * 0.42, 0, Math.PI * 2); ctx.fill();
+      }
       ctx.restore();
     },
+    destroy() { if (typeof window !== 'undefined') window.removeEventListener('devicemotion', onMotion); },
   };
 }
