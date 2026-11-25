@@ -2,6 +2,7 @@
 
 import { timelineFor, PARTY_GAMES } from './rules.js';
 import { createBattleView } from './battle-view.js';
+import { createHeatView, heatLayout } from './heat-view.js';
 import { PARTY_SIZE } from './bots.js';
 import { fitLayout, fromScreen, createSpace } from './screen-fit.js';
 import { createQuizView } from './quiz-view.js';
@@ -161,6 +162,10 @@ export function createPartyApp(root, { api, token, sound, onExit, WebSocketImpl 
       const pl = party.players.find(p => p.key === m.who[sh[0]]);
       if (pl) { pl.kos = sh[8]; pl.downs = sh[9]; pl.score = sh[8]; }
     }
+    if (m.cars) for (const c of m.cars) {
+      const pl = party.players.find(p => p.key === m.who[c[0]]);
+      if (pl) { pl.score = c[6]; pl.downs = pl.downs || 0; }
+    }
     if (m.snakes) for (const sn of m.snakes) {
       const pl = party.players.find(p => p.key === m.who[sn[0]]);
       if (pl) { pl.score = sn[2]; pl.downs = pl.downs || 0; }
@@ -191,7 +196,9 @@ export function createPartyApp(root, { api, token, sound, onExit, WebSocketImpl 
       el.title.textContent = g.duo ? `${g.emoji} ${g.title}` : `${g.emoji} ${g.title} Party`;
       el.mode.textContent = g.duo ? '💞 Duo Mode' : '⚡ Live party';
       el.rules.textContent = g.pitch;
-      el.controls.textContent = p.game === 'battle'
+      el.controls.textContent = p.game === 'heat'
+        ? 'Controls: arrow keys or WASD (↑ go, ↓ brake/reverse). On a phone, put your thumb down anywhere and drag the way you want to drive. With a mouse, hold the button and the car drives toward it.'
+        : p.game === 'battle'
         ? 'Controls: move with the mouse, arrow keys or WASD. On a phone, put your thumb down anywhere and drag: it works like a joystick.'
         : p.game === 'quiz' ? 'Controls: tap an answer, or press 1–4. You get one try per puzzle.'
         : p.game === 'snake' ? 'Controls: arrow keys or WASD. On a phone, swipe on the board or use the arrow buttons.'
@@ -215,6 +222,7 @@ export function createPartyApp(root, { api, token, sound, onExit, WebSocketImpl 
       if (p.game === 'battle' && !battle) battle = createBattleView({ ctx, input, send, serverNow, getParty: () => party, getMe: () => me, color, sound, parts, view: screenView, rtt: () => bestRtt });
       el.drawtop.hidden = el.drawui.hidden = p.game !== 'draw';
       if (p.game === 'draw' && !drawView) drawView = createDrawView({ ctx, top: el.drawtop, ui: el.drawui, input, send, serverNow, getMe: () => me, sound });
+      if (p.game === 'heat' && !battle) battle = createHeatView({ ctx, input, send, serverNow, getParty: () => party, getMe: () => me, color, sound, parts, floats, view: screenView, rtt: () => bestRtt });
       if (p.game === 'snake' && !battle) battle = createSnakeView({ ctx, input, send, serverNow, getParty: () => party, getMe: () => me, color, sound, parts, floats, dpad: el.dpad, view: screenView });
       let touchOnly = false;
       try { touchOnly = !window.matchMedia('(any-pointer: fine)').matches; } catch { /* old browser */ }
@@ -251,7 +259,7 @@ export function createPartyApp(root, { api, token, sound, onExit, WebSocketImpl 
         const sc = party.players[0]?.score || 0;
         el.board.innerHTML = `<li class="is-me ta-duo-team" style="--c:var(--magenta)"><span class="ta-name">${team}</span><span class="ta-score">${party.game === 'market' ? `$${fmt(sc)}` : fmt(sc)}</span></li>`;
       } else {
-      const val = pl => (party.game === 'battle' ? `${pl.kos || 0} KO` : party.game === 'snake' ? `${pl.score} pts` : fmt(pl.score));
+      const val = pl => (party.game === 'heat' ? `$${(pl.score || 0).toLocaleString('en-US')}` : party.game === 'battle' ? `${pl.kos || 0} KO` : party.game === 'snake' ? `${pl.score} pts` : fmt(pl.score));
       el.board.innerHTML = party.players.map(pl => `
         <li class="${pl.key === me ? 'is-me' : ''}" style="--c:${color(pl.key)}"><span class="ta-place">${pl.place}</span><span class="ta-name">${esc(pl.name)}</span><span class="ta-score">${val(pl)}</span></li>`).join('');
       }
@@ -298,12 +306,13 @@ export function createPartyApp(root, { api, token, sound, onExit, WebSocketImpl 
       const mine = party.players.find(p => p.key === me);
       showResults(`
         ${mine ? `<div class="ta-result-label">You finished</div><div class="ta-result-score">${MEDALS[mine.place - 1] || `#${mine.place}`}</div><div class="ta-result-meta">${detail(mine)}</div>` : ''}
-        <ol class="ta-party-final">${party.players.map(p => `<li class="${p.key === me ? 'is-me' : ''}"><span>${MEDALS[p.place - 1] || `${p.place}.`}</span><span class="ta-name">${esc(p.name)}</span><span class="ta-score">${party.game === 'battle' ? `${p.kos || 0} KO` : party.game === 'snake' ? `${p.score} pts` : fmt(p.score)}</span></li>`).join('')}</ol>`);
+        <ol class="ta-party-final">${party.players.map(p => `<li class="${p.key === me ? 'is-me' : ''}"><span>${MEDALS[p.place - 1] || `${p.place}.`}</span><span class="ta-name">${esc(p.name)}</span><span class="ta-score">${party.game === 'heat' ? `$${(p.score || 0).toLocaleString('en-US')}` : party.game === 'battle' ? `${p.kos || 0} KO` : party.game === 'snake' ? `${p.score} pts` : fmt(p.score)}</span></li>`).join('')}</ol>`);
     }
   }
   function detail(pl) {
     if (party.game === 'quiz') return `${fmt(pl.score)} points · ${pl.hits}/${QUESTIONS} right`;
     if (party.game === 'draw') return `${fmt(pl.score)} points · guessed ${pl.hits} ${pl.hits === 1 ? 'drawing' : 'drawings'}`;
+    if (party.game === 'heat') return `$${(pl.score || 0).toLocaleString('en-US')} banked · ${pl.hits || 0} grabs · ${pl.kos || 0} steals · busted ${pl.downs || 0}×`;
     if (party.game === 'snake') return `${pl.score} points · ${pl.hits || 0} food · ${pl.kos || 0} ${pl.kos === 1 ? 'KO' : 'KOs'} · crashed ${pl.downs || 0}×`;
     return party.game === 'battle'
       ? `${pl.kos || 0} ${pl.kos === 1 ? 'KO' : 'KOs'} · knocked out ${pl.downs || 0}× · ${pl.hits || 0} hits`
@@ -333,7 +342,8 @@ export function createPartyApp(root, { api, token, sound, onExit, WebSocketImpl 
     if (!el.root.classList.contains('is-live-canvas')) return;
     const bw = el.canvaswrap.clientWidth, bh = el.canvaswrap.clientHeight;
     if (!bw || !bh) return;
-    Object.assign(screenView, fitLayout(bw, bh, { rotate: ROTATES.has(party?.game) }));
+    // Street Heat follows your car, so it simply shows more street on a bigger or taller screen
+    Object.assign(screenView, party?.game === 'heat' ? heatLayout(bw, bh) : fitLayout(bw, bh, { rotate: ROTATES.has(party?.game) }));
     const dpr = Math.min(2, window.devicePixelRatio || 1);
     const cw = Math.floor(screenView.sw * screenView.css), ch = Math.floor(screenView.sh * screenView.css);
     el.canvas.style.width = `${cw}px`; el.canvas.style.height = `${ch}px`;
@@ -391,7 +401,7 @@ export function createPartyApp(root, { api, token, sound, onExit, WebSocketImpl 
     },
     render() {
       if (party?.status !== 'running') return;
-      if (party.game === 'battle' || party.game === 'snake') { battle?.render(); return; }
+      if (party.game === 'battle' || party.game === 'snake' || party.game === 'heat') { battle?.render(); return; }
       if (party.game === 'quiz' || party.duo) return;
       space.world(); // scale to the canvas size (these games are never sideways)
       if (party.game === 'boat') { boatView?.render(); return; }

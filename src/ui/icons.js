@@ -1,6 +1,7 @@
 // Small inline SVG icons (no image files needed).
 const svg = body => `<svg viewBox="0 0 48 48" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">${body}</svg>`;
 export const ICONS = {
+  heat: svg('<path d="M10 30 L14 20 Q15 17 18 17 L30 17 Q33 17 34 20 L38 30 Z"/><rect x="8" y="30" width="32" height="8" rx="2"/><circle cx="15" cy="39" r="3"/><circle cx="33" cy="39" r="3"/><path d="M20 12 h8"/>'),
   shooter: svg('<path d="M24 6 L34 30 L24 25 L14 30 Z"/><path d="M18 36 L24 31 L30 36"/><circle cx="10" cy="12" r="2"/><circle cx="40" cy="16" r="2"/>'),
   reaction: svg('<circle cx="24" cy="24" r="17"/><circle cx="24" cy="24" r="9"/><circle cx="24" cy="24" r="2.5" fill="currentColor"/>'),
   memory: svg('<rect x="7" y="10" width="15" height="21" rx="3"/><rect x="26" y="17" width="15" height="21" rx="3"/><path d="M33.5 24 v7 M30 27.5 h7"/>'),

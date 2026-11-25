@@ -17,6 +17,7 @@ import { createRace, addRower, paddle, step as stepRace, snapshot as raceSnapsho
 
 import { isGif, fromBase64 } from '../src/party/firework-gif.js';
 import { createShow, addSparker, submit as fwSubmit, rate as fwRate, artFor, step as stepShow, snapshot as showSnapshot, showStats, showSummary, isOver as showOver, TICK_MS as SHOW_TICK_MS } from '../src/party/firework.js';
+import { createStreet, addDriver, setControls as setDrive, step as stepStreet, snapshot as streetSnapshot, stats as streetStats, isOver as streetOver, botControls as streetBot } from '../src/games/street.js';
 import {
   fillWithBots, botKeys, battleBotInput, snakeBotDir, reactionBotTap, quizBotAnswer, boatBotTap, drawBotGuess, drawBotChatter,
   fireworkBotArt, fireworkBotReadyAt, fireworkBotStars,
@@ -24,6 +25,7 @@ import {
 
 // What bots do each tick in the real-time games (see src/party/bots.js).
 const BOTS = {
+  heat: (sim, p) => { for (const k of botKeys(p)) setDrive(sim, k, ...streetBot(sim, k)); },
   battle: (sim, p, now) => { const t = (now - p.startAt) / 1000; for (const k of botKeys(p)) setInput(sim, k, ...battleBotInput(sim, k, t)); },
   snake: (sim, p) => { for (const k of botKeys(p)) { const d = snakeBotDir(sim, k); if (d) setDir(sim, k, d); } },
   boat: (sim, p, now) => {
@@ -61,6 +63,8 @@ const LIVE = {
   boat: { tickMs: RACE_TICK_MS, types: ['paddle'], create: createRace, add: addRower, step: stepRace, snapshot: raceSnapshot, stats: raceStats,
     summary: raceSummary, isOver: raceOver,
     input: (sim, key, msg, now) => { const r = paddle(sim, key, Number(msg.t), now); return r && { type: 'paddle-result', q: r.q }; } },
+  heat: { tickMs: 50, types: ['drive'], create: seed => createStreet(seed, { mode: 'party' }), add: addDriver, step: sim => stepStreet(sim, 0.05), snapshot: streetSnapshot, stats: streetStats, isOver: streetOver,
+    input: (sim, key, msg) => { if (msg.type === 'drive') setDrive(sim, key, Number(msg.th), Number(msg.st)); } },
   battle: { tickMs: 50, types: ['input'], create: createBattle, add: addShip, step: sim => stepBattle(sim, 0.05), snapshot: battleSnapshot, stats: battleStats,
     input: (sim, key, msg) => { if (msg.type === 'input') setInput(sim, key, Number(msg.mx), Number(msg.my)); } },
   snake: { tickMs: SNAKE_TICK_MS, types: ['dir'], create: createSnakeGame, add: addSnake, step: stepSnake, snapshot: snakeSnapshot, stats: snakeStats,
@@ -289,7 +293,7 @@ export class PartyRoom {
     this.battle = live.create(p.seed, p);
     for (const [key, pl] of Object.entries(p.players)) {
       const unit = live.add(this.battle, key, pl.name);
-      if (unit) Object.assign(unit, { score: pl.score || 0, kos: pl.kos || 0, downs: pl.downs || 0, hits: pl.hits || 0, ...(p.game === 'snake' ? { food: pl.hits || 0 } : {}) });
+      if (unit) Object.assign(unit, { score: pl.score || 0, kos: pl.kos || 0, downs: pl.downs || 0, hits: pl.hits || 0, ...(p.game === 'snake' ? { food: pl.hits || 0 } : {}), ...(p.game === 'heat' ? { banked: pl.score || 0, steals: pl.kos || 0, busts: pl.downs || 0, grabs: pl.hits || 0 } : {}) });
     }
     live.restore?.(this.battle, p, this.now());
     this.liveTicks = 0;
@@ -588,7 +592,9 @@ export class PartyRoom {
       if (p.game === 'boat') { await this.postRaceResults(p); return; }
       if (p.game === 'firework') { await this.fireworkPosted(); await this.postShowResults(p); return; }
       const g = PARTY_GAMES[p.game || 'reaction'];
-      const detail = r => (p.game === 'battle'
+      const detail = r => (p.game === 'heat'
+        ? `$${r.score.toLocaleString('en-US')} banked · ${r.hits} ${r.hits === 1 ? 'grab' : 'grabs'} · ${r.kos} ${r.kos === 1 ? 'steal' : 'steals'} · busted ${r.downs}×`
+        : p.game === 'battle'
         ? `${r.kos} ${r.kos === 1 ? 'KO' : 'KOs'} · knocked out ${r.downs}×`
         : p.game === 'snake'
         ? `${r.score} pts · ${r.hits} food · ${r.kos} ${r.kos === 1 ? 'KO' : 'KOs'}`

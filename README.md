@@ -8,6 +8,7 @@ The same games run in two places:
 
 | Game | How it plays | Ranked by |
 |---|---|---|
+| 🚓 **Street Heat** | 90 seconds in a neon city seen from above. Grab the **$** loot at shops (it makes you wanted: up to 6 ★, and more stars bring more police). Lose the cops (stay away from them and the stars fade) or drive through a **CAR WASH**, then bank the loot at the **HIDEOUT**, which stays locked while you're wanted. If the police box you in, you're busted and lose what you carry. Banking several grabs in one trip adds +25% per extra grab. Arrows/WASD, drag on a touch screen, or hold the mouse. On an upright phone you see a tall view of the street. An original game in the spirit of open-world crime games: driving and chases only. | Cash banked (higher is better) |
 | 🚀 **Drone Shooter** | Six waves of drones, then a boss. Move with the mouse, arrow keys/WASD, or drag on a touch screen; you fire automatically. Power-ups: **S** spread shot, **R** rapid fire, **◯** shield. Quick kills build a multiplier up to x5. | Points (higher is better). Beating the boss adds 5,000, plus 1,000 per life left. |
 | ⚡ **Reaction Tap** | Hit shrinking targets for 30 seconds; red targets cost points. | Points (higher is better) |
 | 🧠 **Memory Match** | Find 8 pairs on a 4×4 grid. | Time + 2 s for every move beyond 8 (lower is better) |
@@ -66,6 +67,12 @@ While a game runs it fills the whole screen. Ship Battle, Snake Arena and Reacti
 - **Alone?** Start it anyway (Start now works with one player): you draw, watch your firework, and the GIF goes to the group.
 - **Highest average rating wins.** The bot posts every firework's stars, the crowd favourite, the most generous critic, and who didn't draw.
 - Drawings are checked on the server (colours, size, up to 1,600 points each) and only sent out when their turn comes.
+
+**🚓 Street Heat** (2 minutes, up to 8 players, `/party gta` or `/party street`)
+- Everyone drives in the same city as in the solo game. Grab loot, lose the police or hit a car wash, and bank it at the hideout. The police chase whoever has the most stars.
+- Ram a car that's carrying loot (at speed) to knock half of it loose as a bag anyone can grab.
+- Most cash banked wins. Bots grab loot, use the car wash, bank, and sometimes chase a rich car.
+- The view follows your car and fills the screen whatever its shape. Rules: `src/games/street.js` (shared with the solo game).
 
 **🚀 Ship Battle** (90 seconds, 2–8 players)
 - Everyone flies a ship in one arena with cover blocks. Your ship **fires forward on its own**, so you aim by steering.
@@ -238,7 +245,7 @@ To update the games, upload a new `arcade.js` with the same name. Players get it
 
 ```bash
 npm install
-npm test                       # 231 automated tests: game rules, saving and conflicts, ranking, the Telegram server, live parties, Duo Mode, the music room
+npm test                       # 243 automated tests: game rules, saving and conflicts, ranking, the Telegram server, live parties, Duo Mode, the music room
 npm run build                  # dist/ (Confluence) and site/ (Telegram / GitHub Pages)
 
 node dev/local-telegram.mjs    # Telegram version with a pretend Telegram + GitHub → http://localhost:8787/play?name=Dara

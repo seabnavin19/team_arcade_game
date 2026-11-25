@@ -426,6 +426,30 @@ describe('live party', () => {
     expect(r.obj.party.players['tg-1'].score).toBeGreaterThan(0); // the artist scores for every bot that gets it
   });
 
+  it('plays a Street Heat party (/party gta): bots drive, scores are cash banked', async () => {
+    await webhook({ message: { text: '/party gta', chat: GROUP, from: { id: 1, first_name: 'Dara' } } });
+    expect(lastText()).toMatch(/Street Heat/);
+    const r = rooms.get(String(GROUP.id));
+    const a = fakeWs('tg-1', 'Dara');
+    r.sockets.push(a);
+    join(r.obj.party, { key: 'tg-1', name: 'Dara' }, clock);
+    clock = r.alarm(); await r.obj.alarm();
+    clearInterval(r.obj.ticker); r.obj.ticker = null;
+    const sim = r.obj.battle;
+    expect(sim.order).toHaveLength(4); // you + 3 bots
+    await r.obj.webSocketMessage(a, JSON.stringify({ type: 'drive', th: 1, st: 0.2 }));
+    expect(sim.drivers['tg-1'].throttle).toBe(1);
+    for (let i = 0; i < 20 * 125 && r.obj.party.status === 'running'; i++) { clock += 50; r.obj.liveTick(); }
+    const snap = a.inbox.findLast(m => m.type === 'snap');
+    expect(snap.cars).toHaveLength(4);
+    expect(sim.over).toBe(true);
+    for (let k = 0; k < 200 && !/Party results/.test(lastText()); k++) await new Promise(res => setTimeout(res, 5));
+    expect(lastText()).toMatch(/Street Heat Party results/);
+    expect(lastText()).toMatch(/banked · \d+ grabs?/);
+    const banked = Object.values(sim.drivers).reduce((n, d) => n + d.banked, 0);
+    expect(Object.values(r.obj.party.players).reduce((n, p) => n + p.score, 0)).toBe(banked);
+  });
+
   it('ping gets the server time back (for clock sync)', async () => {
     await webhook({ message: { text: '/party reaction', chat: GROUP, from: { id: 1, first_name: 'Dara' } } });
     const r = rooms.get(String(GROUP.id));
@@ -438,7 +462,7 @@ describe('live party', () => {
     await webhook({ message: { text: '/party', chat: GROUP, from: { id: 1, first_name: 'Dara' } } });
     const picker = sent.find(s => s.method === 'sendMessage').body;
     expect(picker.text).toMatch(/Pick a party game/);
-    expect(picker.reply_markup.inline_keyboard.map(row => row[0].callback_data)).toEqual(['party:reaction', 'party:quiz', 'party:boat', 'party:firework', 'party:draw', 'party:snake', 'party:battle']);
+    expect(picker.reply_markup.inline_keyboard.map(row => row[0].callback_data)).toEqual(['party:reaction', 'party:quiz', 'party:boat', 'party:firework', 'party:draw', 'party:snake', 'party:heat', 'party:battle']);
     sent.length = 0;
     await webhook({ callback_query: { id: 'p1', from: { id: 2, first_name: 'Sokha' }, data: 'party:battle', message: { chat: GROUP, message_id: 50 } } });
     expect(sent.find(s => s.method === 'editMessageText').body.text).toMatch(/Sokha<\/b> picked <b>🚀 Ship Battle/);

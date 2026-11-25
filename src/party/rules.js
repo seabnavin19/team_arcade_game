@@ -28,6 +28,8 @@ export const PARTY_GAMES = {
     pitch: '3 rounds. Take turns drawing a secret word while everyone else guesses. Quick correct guesses score more, and the artist scores for every player who gets it.' },
   snake: { title: 'Snake Arena', emoji: '🐍', seconds: 90, maxPlayers: 8,
     pitch: "Everyone's snake in one arena. Eat food to grow (+1, golden +3). If another snake crashes into you, you get +5. Hit a wall or a snake and you respawn small. Most points wins." },
+  heat: { title: 'Street Heat', emoji: '🚓', seconds: 120, maxPlayers: 8,
+    pitch: 'Everyone drives in one neon city. Grab the $ loot (it makes you wanted), lose the cops or hit a car wash, then bank it at the HIDEOUT. Ram a car carrying loot to knock half of it loose. Most cash banked wins.' },
   battle: { title: 'Ship Battle', emoji: '🚀', seconds: 90, maxPlayers: 8,
     pitch: 'Everyone flies a ship in one arena. Your ship fires forward on its own, so steer to aim. 3 hits knock a ship out, and the most KOs wins.' },
   // Duo Mode: exactly 2 players on one team, sharing one score.
