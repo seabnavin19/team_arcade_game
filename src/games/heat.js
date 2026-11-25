@@ -25,7 +25,7 @@ export default {
   id: 'heat',
   title: 'Street Heat',
   blurb: 'Grab the loot, lose the cops, bank it at the hideout. 90 seconds in a neon city.',
-  controls: 'Phone: tilt to steer, hold to brake · Arrows/WASD · mouse: hold to drive',
+  controls: 'Phone: turn the wheel, hold BRAKE · Arrows/WASD · mouse: hold to drive',
   length: '90 sec',
   better: 'higher',
   plausible: (score, seconds) => (score <= 30000 && seconds >= SOLO_SECONDS - 2 ? { ok: true } : { ok: false }),
@@ -41,6 +41,7 @@ export default {
     const say = (text, color, secs = 1.6) => { banner = { text, color, until: sim.time + secs }; };
     const controls = createDriveControls(input, {
       toWorld: (x, y) => ({ x: x + (cam?.x || 0), y: y + (cam?.y || 0) }),
+      screen: () => ({ w: width, h: height }),
       cssScale: () => ctx.canvas.getBoundingClientRect().width / width || 1,
     });
     say('Grab the $ · lose the cops · bank it at the HIDEOUT', C.text, 4);
@@ -93,8 +94,8 @@ export default {
         drawMinimap(ctx, sim.city, width - mw - 10, HUD + 10, mw, { me, cops: sim.cops, loot: sim.loot }, t);
         if (banner && banner.until > t) {
           ctx.save(); ctx.font = `900 ${narrow ? 18 : 24}px system-ui, sans-serif`; ctx.textAlign = 'center';
-          ctx.fillStyle = 'rgba(7,6,26,.6)'; const tw = ctx.measureText(banner.text).width; ctx.fillRect(width / 2 - tw / 2 - 14, height - 70, tw + 28, 40);
-          ctx.fillStyle = banner.color; ctx.shadowColor = banner.color; ctx.shadowBlur = 10; ctx.fillText(banner.text, width / 2, height - 42); ctx.restore();
+          const by = Math.round(height * 0.62); ctx.fillStyle = 'rgba(7,6,26,.6)'; const tw = ctx.measureText(banner.text).width; ctx.fillRect(width / 2 - tw / 2 - 14, by - 28, tw + 28, 40);
+          ctx.fillStyle = banner.color; ctx.shadowColor = banner.color; ctx.shadowBlur = 10; ctx.fillText(banner.text, width / 2, by); ctx.restore();
         }
         if (atHideout(sim.city, me.x, me.y) && me.carry > 0 && me.stars > 0) { ctx.save(); ctx.font = MONO; ctx.textAlign = 'center'; ctx.fillStyle = C.red; ctx.fillText('HIDEOUT LOCKED', width / 2, HUD + 70); ctx.restore(); }
         controls.draw(ctx);

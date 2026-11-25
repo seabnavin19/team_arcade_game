@@ -158,3 +158,39 @@ describe('Street Heat tilt steering', () => {
     expect(tiltSteer(NaN, 0, 0, 0)).toBe(0);
   });
 });
+
+describe('Street Heat on-screen wheel', () => {
+  const fakeInput = () => {
+    const ls = { pointerdown: [], pointermove: [], pointerup: [] };
+    return { keys: new Set(), pointer: { inside: false }, on: (t, f) => ls[t]?.push(f), fire: (t, pt, id) => ls[t].forEach(f => f(pt, { pointerId: id })) };
+  };
+  it('turning the wheel steers, letting go straightens it, and BRAKE brakes while you steer', async () => {
+    globalThis.window ||= { matchMedia: () => ({ matches: true }), addEventListener() {}, removeEventListener() {} };
+    globalThis.navigator ||= { maxTouchPoints: 5 };
+    const { createDriveControls, padLayout } = await import('../src/games/street-draw.js');
+    const input = fakeInput();
+    const c = createDriveControls(input, { toWorld: (x, y) => ({ x, y }), screen: () => ({ w: 800, h: 480 }) });
+    const { wheel: w, brake: b } = padLayout(800, 480);
+    const car = { x: 0, y: 0, a: 0, v: 0 };
+    expect(c.read(car)).toEqual([1, 0]); // drives by itself, straight
+    // thumb on the top of the wheel, turned clockwise to the right side
+    input.fire('pointerdown', { x: w.x, y: w.y - w.r * 0.8, type: 'touch', down: true }, 1);
+    input.fire('pointermove', { x: w.x + w.r * 0.57, y: w.y - w.r * 0.57, type: 'touch', down: true }, 1);
+    input.fire('pointermove', { x: w.x + w.r * 0.8, y: w.y, type: 'touch', down: true }, 1);
+    const [th, steer] = c.read(car);
+    expect(th).toBe(1); expect(steer).toBeGreaterThan(0.9); // right
+    // second thumb on BRAKE while still steering
+    input.fire('pointerdown', { x: b.x + b.w / 2, y: b.y + b.h / 2, type: 'touch', down: true }, 2);
+    expect(c.read(car)[0]).toBe(-1);
+    expect(c.read(car)[1]).toBeGreaterThan(0.9);
+    input.fire('pointerup', { type: 'touch' }, 2);
+    // let go of the wheel: it springs back
+    input.fire('pointerup', { type: 'touch' }, 1);
+    await new Promise(r => setTimeout(r, 400));
+    expect(Math.abs(c.read(car)[1])).toBeLessThan(0.05);
+    // turning the other way steers left
+    input.fire('pointerdown', { x: w.x, y: w.y - w.r * 0.8, type: 'touch', down: true }, 3);
+    input.fire('pointermove', { x: w.x - w.r * 0.8, y: w.y, type: 'touch', down: true }, 3);
+    expect(c.read(car)[1]).toBeLessThan(-0.9);
+  });
+});

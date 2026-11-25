@@ -28,6 +28,7 @@ export function createHeatView({ ctx, input, send, serverNow, getParty, getMe, c
   let cam = null, banner = null, lastSent = { th: 9, st: 9, at: 0 };
   const controls = createDriveControls(input, {
     toWorld: (x, y) => ({ x: x + (cam?.x || 0), y: y + (cam?.y || 0) }),
+    screen: () => ({ w: view.sw, h: view.sh }),
     cssScale: () => view.css || 1,
   });
   const say = (text, col, ms = 1600) => { banner = { text, col, until: performance.now() + ms }; };
@@ -152,9 +153,9 @@ export function createHeatView({ ctx, input, send, serverNow, getParty, getMe, c
     drawMinimap(ctx, city, view.sw - mw - 10, 66, mw, { me: mine, others, cops, loot }, t);
     if (banner && banner.until > performance.now()) {
       ctx.save(); ctx.font = `900 ${narrow ? 17 : 22}px system-ui, sans-serif`; ctx.textAlign = 'center';
-      const tw = ctx.measureText(banner.text).width;
-      ctx.fillStyle = 'rgba(7,6,26,.6)'; ctx.fillRect(view.sw / 2 - tw / 2 - 14, view.sh - 66, tw + 28, 38);
-      ctx.fillStyle = banner.col; ctx.shadowColor = banner.col; ctx.shadowBlur = 10; ctx.fillText(banner.text, view.sw / 2, view.sh - 40); ctx.restore();
+      const tw = ctx.measureText(banner.text).width, by = Math.round(view.sh * 0.62);
+      ctx.fillStyle = 'rgba(7,6,26,.6)'; ctx.fillRect(view.sw / 2 - tw / 2 - 14, by - 26, tw + 28, 38);
+      ctx.fillStyle = banner.col; ctx.shadowColor = banner.col; ctx.shadowBlur = 10; ctx.fillText(banner.text, view.sw / 2, by); ctx.restore();
     }
     controls.draw(ctx);
   }

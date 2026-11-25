@@ -190,121 +190,167 @@ export function tiltSteer(ax, ay, az, angle) {
   return Math.abs(g) < 0.08 ? 0 : g; // small dead zone so a level phone drives straight
 }
 
+/** Where the on-screen wheel and brake pedal sit, for a screen of w × h game units. */
+export function padLayout(w, h) {
+  const r = Math.max(52, Math.min(82, Math.min(w, h) * 0.17));
+  return {
+    wheel: { x: r + 22, y: h - r - 22, r },
+    brake: { x: w - 22 - r * 1.1, y: h - 22 - r * 1.5, w: r * 1.1, h: r * 1.5 },
+    button: { x: 12, y: 112, w: 84, h: 30 },
+  };
+}
+const MAX_TURN = (110 * Math.PI) / 180; // the wheel turns up to 110° each way
+const wrap = a => { while (a > Math.PI) a -= 2 * Math.PI; while (a < -Math.PI) a += 2 * Math.PI; return a; };
+
 /**
- * Driving controls for tilt, touch, keyboard and mouse → [throttle, steer].
- * Phone: tilt it like a steering wheel; the car drives forward by itself and
- * holding a finger on the screen brakes (and reverses once stopped). The
- * TILT/DRAG button switches to a thumb joystick instead.
- * Keys: ↑/W go, ↓/S brake & reverse, ←→/AD steer. Mouse: hold the button and
- * the car drives toward the pointer.
- * `toWorld(x, y)` turns a pointer position into city coordinates; `cssScale()`
- * is screen pixels per game unit (for the joystick size).
+ * Driving controls → [throttle, steer].
+ * Phone (default "wheel"): the car drives forward by itself; turn the steering
+ * wheel at the bottom left with your thumb (it springs back when you let go)
+ * and hold BRAKE at the bottom right to brake, or to reverse once stopped.
+ * The mode button switches to TILT (tilt the phone like a wheel; hold the
+ * screen to brake) or DRAG (a thumb joystick).
+ * Computer: ↑/W go, ↓/S brake & reverse, ←→/AD steer; or hold the mouse
+ * button and the car drives toward the pointer.
+ * `toWorld(x, y)` turns a screen position into city coordinates, `screen()`
+ * gives the screen size in game units, `cssScale()` is screen pixels per unit.
  */
-export function createDriveControls(input, { toWorld, cssScale = () => 1 }) {
-  let joy = null, mouseDown = false, braking = false;
+export function createDriveControls(input, { toWorld, screen = () => ({ w: 800, h: 480 }), cssScale = () => 1 }) {
   const touch = typeof window !== 'undefined' && (window.matchMedia?.('(hover: none) and (pointer: coarse)').matches || navigator.maxTouchPoints > 0);
-  const tilt = { on: touch, live: false, steer: 0, asked: false, usedAt: 0 };
-  const button = { x: 12, y: 112, w: 74, h: 30 };
-  const screenAngle = () => (typeof screen !== 'undefined' && screen.orientation ? screen.orientation.angle : Number(window.orientation) || 0);
+  const MODES = ['wheel', 'tilt', 'drag'];
+  const st = { mode: 'wheel', angle: 0, wheelId: null, grab: 0, start: 0, brakeIds: new Set(), joy: null, mouseDown: false };
+  const tilt = { live: false, steer: 0, asked: false };
+  const pads = () => { const { w, h } = screen(); return padLayout(w, h); };
+  const screenAngle = () => (typeof window !== 'undefined' && window.screen?.orientation ? window.screen.orientation.angle : Number(window.orientation) || 0);
   const onMotion = e => {
     const g = e.accelerationIncludingGravity;
     if (!g || g.x == null) return;
     tilt.live = true;
-    const s = tiltSteer(g.x, g.y, g.z, screenAngle());
-    tilt.steer = tilt.steer + (s - tilt.steer) * 0.35; // smooth out hand shake
+    tilt.steer += (tiltSteer(g.x, g.y, g.z, screenAngle()) - tilt.steer) * 0.35;
   };
   if (typeof window !== 'undefined') window.addEventListener('devicemotion', onMotion);
-  // iPhones ask for permission, and only after a tap
   const askMotion = () => {
-    if (tilt.asked || !tilt.on) return;
+    if (tilt.asked) return;
     tilt.asked = true;
     const D = typeof DeviceMotionEvent !== 'undefined' ? DeviceMotionEvent : null;
-    if (D && typeof D.requestPermission === 'function') D.requestPermission().then(r => { if (r !== 'granted') tilt.on = false; }).catch(() => { tilt.on = false; });
+    if (D && typeof D.requestPermission === 'function') D.requestPermission().catch(() => {});
   };
-  const tiltActive = () => tilt.on && tilt.live;
-  const onButton = pt => touch && pt.x >= button.x && pt.x <= button.x + button.w && pt.y >= button.y && pt.y <= button.y + button.h;
+  const inRect = (p, r) => p.x >= r.x && p.x <= r.x + r.w && p.y >= r.y && p.y <= r.y + r.h;
+  const angleAt = (p, c) => Math.atan2(p.y - c.y, p.x - c.x);
 
-  input.on('pointerdown', pt => {
-    if (pt.type === 'mouse') { mouseDown = true; joy = null; return; }
-    if (onButton(pt)) { tilt.on = !tilt.on; askMotion(); return; }
-    askMotion();
-    if (tiltActive()) { braking = true; joy = null; return; }
-    joy = { ox: pt.x, oy: pt.y, cx: pt.x, cy: pt.y };
+  input.on('pointerdown', (pt, e) => {
+    if (pt.type === 'mouse') { st.mouseDown = true; return; }
+    const id = e?.pointerId ?? 0, L = pads();
+    if (touch && inRect(pt, L.button)) {
+      st.mode = MODES[(MODES.indexOf(st.mode) + 1) % MODES.length];
+      if (st.mode === 'tilt') askMotion();
+      st.joy = null; st.wheelId = null; st.brakeIds.clear();
+      return;
+    }
+    if (st.mode === 'wheel') {
+      const w = L.wheel;
+      if (inRect(pt, L.brake) || (pt.x > screen().w / 2 && Math.hypot(pt.x - w.x, pt.y - w.y) > w.r * 1.6)) { st.brakeIds.add(id); return; }
+      st.wheelId = id; st.grab = angleAt(pt, w); st.start = st.angle; // grab the wheel anywhere on the left
+      return;
+    }
+    if (st.mode === 'tilt') { askMotion(); st.brakeIds.add(id); return; }
+    st.joy = { id, ox: pt.x, oy: pt.y, cx: pt.x, cy: pt.y };
   });
-  input.on('pointermove', pt => {
-    if (!joy || !pt.down) return;
-    joy.cx = pt.x; joy.cy = pt.y;
-    const R = 46 / cssScale(), dx = joy.cx - joy.ox, dy = joy.cy - joy.oy, d = Math.hypot(dx, dy);
-    if (d > R) { joy.ox = joy.cx - (dx / d) * R; joy.oy = joy.cy - (dy / d) * R; }
+  input.on('pointermove', (pt, e) => {
+    const id = e?.pointerId ?? 0;
+    if (st.mode === 'wheel' && id === st.wheelId) {
+      const w = pads().wheel;
+      if (Math.hypot(pt.x - w.x, pt.y - w.y) < w.r * 0.18) return; // too close to the middle to read an angle
+      const a = angleAt(pt, w);
+      st.start += wrap(a - st.grab); st.grab = a; // follow the thumb round the wheel
+      st.angle = Math.max(-MAX_TURN, Math.min(MAX_TURN, st.start));
+      return;
+    }
+    if (st.joy && id === st.joy.id && pt.down) {
+      const j = st.joy; j.cx = pt.x; j.cy = pt.y;
+      const R = 46 / cssScale(), dx = j.cx - j.ox, dy = j.cy - j.oy, d = Math.hypot(dx, dy);
+      if (d > R) { j.ox = j.cx - (dx / d) * R; j.oy = j.cy - (dy / d) * R; }
+    }
   });
-  input.on('pointerup', () => { askMotion(); joy = null; mouseDown = false; braking = false; });
+  input.on('pointerup', (pt, e) => {
+    const id = e?.pointerId ?? 0;
+    if (pt.type === 'mouse') st.mouseDown = false;
+    if (id === st.wheelId) st.wheelId = null;
+    st.brakeIds.delete(id);
+    if (st.joy?.id === id) st.joy = null;
+  });
   const towards = (car, ang, mag) => {
-    let diff = ang - car.a;
-    while (diff > Math.PI) diff -= 2 * Math.PI;
-    while (diff < -Math.PI) diff += 2 * Math.PI;
-    // pointing backwards: reverse (steering flips when reversing)
+    const diff = wrap(ang - car.a);
     if (Math.abs(diff) > 2.5 && car.v < 80) return [-0.85 * mag, -Math.sign(diff) * Math.min(1, (Math.PI - Math.abs(diff)) * 2.5)];
     return [mag * (Math.abs(diff) > 1.4 ? 0.45 : 1), Math.max(-1, Math.min(1, diff * 2.6))];
   };
+  let last = performance.now();
   return {
+    get mode() { return st.mode; },
     read(car) {
+      const now = performance.now(), dt = Math.min(1, (now - last) / 1000); last = now;
+      // the wheel springs back to straight when you let go
+      if (st.wheelId === null && st.angle) st.angle = Math.abs(st.angle) < 0.03 ? 0 : st.angle * Math.pow(0.0005, dt);
       const k = input.keys;
       const up = k.has('ArrowUp') || k.has('w') || k.has('W'), down = k.has('ArrowDown') || k.has('s') || k.has('S');
       const left = k.has('ArrowLeft') || k.has('a') || k.has('A'), right = k.has('ArrowRight') || k.has('d') || k.has('D');
       if (up || down || left || right) return [(up ? 1 : 0) - (down ? 1 : 0), (right ? 1 : 0) - (left ? 1 : 0)];
-      if (tiltActive()) {
-        if (Math.abs(tilt.steer) > 0.2) tilt.usedAt = performance.now();
-        return [braking ? -1 : 1, tilt.steer];
+      if (st.mouseDown && input.pointer.inside) {
+        const w = toWorld(input.pointer.x, input.pointer.y), d = Math.hypot(w.x - car.x, w.y - car.y);
+        return d < 18 ? [0, 0] : towards(car, Math.atan2(w.y - car.y, w.x - car.x), Math.min(1, d / 120));
       }
-      if (joy) {
-        const R = 46 / cssScale(), dx = joy.cx - joy.ox, dy = joy.cy - joy.oy, d = Math.hypot(dx, dy);
-        if (d < R * 0.18) return [0, 0];
-        return towards(car, Math.atan2(dy, dx), Math.min(1, d / R));
-      }
-      if (mouseDown && input.pointer.inside) {
-        const w = toWorld(input.pointer.x, input.pointer.y);
-        const d = Math.hypot(w.x - car.x, w.y - car.y);
-        if (d < 18) return [0, 0];
-        return towards(car, Math.atan2(w.y - car.y, w.x - car.x), Math.min(1, d / 120));
+      if (!touch) return [0, 0];
+      const brake = st.brakeIds.size > 0;
+      if (st.mode === 'wheel') return [brake ? -1 : 1, Math.max(-1, Math.min(1, st.angle / (MAX_TURN * 0.8)))];
+      if (st.mode === 'tilt') return [brake ? -1 : 1, tilt.live ? tilt.steer : 0];
+      if (st.joy) {
+        const R = 46 / cssScale(), dx = st.joy.cx - st.joy.ox, dy = st.joy.cy - st.joy.oy, d = Math.hypot(dx, dy);
+        return d < R * 0.18 ? [0, 0] : towards(car, Math.atan2(dy, dx), Math.min(1, d / R));
       }
       return [0, 0];
     },
-    /** joystick, tilt meter and the TILT/DRAG switch (screen coordinates) */
+    /** the wheel, pedal, mode button and joystick (screen coordinates) */
     draw(ctx) {
+      if (!touch) return;
+      const L = pads();
       ctx.save();
-      if (touch) {
-        // the switch
-        const on = tilt.on;
-        ctx.fillStyle = on ? 'rgba(255,61,154,.85)' : 'rgba(21,18,46,.85)';
-        ctx.strokeStyle = on ? '#ff3d9a' : 'rgba(236,233,255,.35)'; ctx.lineWidth = 1.5;
-        roundRect(ctx, button.x, button.y, button.w, button.h, 15); ctx.fill(); ctx.stroke();
-        ctx.fillStyle = '#fff'; ctx.font = '800 12px system-ui, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-        ctx.fillText(on ? '📱 TILT' : '👆 DRAG', button.x + button.w / 2, button.y + button.h / 2 + 1);
-        if (tiltActive()) {
-          // a little steering wheel that turns with the phone
-          const cx = button.x + button.w + 26, cy = button.y + button.h / 2;
-          ctx.translate(cx, cy); ctx.rotate(tilt.steer * 1.2);
-          ctx.strokeStyle = 'rgba(236,233,255,.8)'; ctx.lineWidth = 3;
-          ctx.beginPath(); ctx.arc(0, 0, 11, 0, Math.PI * 2); ctx.stroke();
-          ctx.beginPath(); ctx.moveTo(-11, 0); ctx.lineTo(11, 0); ctx.moveTo(0, 0); ctx.lineTo(0, 11); ctx.stroke();
-        }
+      // mode button
+      ctx.fillStyle = 'rgba(21,18,46,.85)'; ctx.strokeStyle = 'rgba(236,233,255,.4)'; ctx.lineWidth = 1.5;
+      roundRect(ctx, L.button.x, L.button.y, L.button.w, L.button.h, 15); ctx.fill(); ctx.stroke();
+      ctx.fillStyle = '#fff'; ctx.font = '800 12px system-ui, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText(st.mode === 'wheel' ? '🛞 WHEEL' : st.mode === 'tilt' ? '📱 TILT' : '👆 DRAG', L.button.x + L.button.w / 2, L.button.y + L.button.h / 2 + 1);
+      if (st.mode !== 'drag') {
+        // brake pedal
+        const b = L.brake, on = st.brakeIds.size > 0;
+        ctx.globalAlpha = on ? 0.95 : 0.6;
+        ctx.fillStyle = on ? '#ff4d4d' : 'rgba(21,18,46,.8)'; ctx.strokeStyle = '#ff4d4d'; ctx.lineWidth = 2;
+        roundRect(ctx, b.x, b.y, b.w, b.h, 12); ctx.fill(); ctx.stroke();
+        ctx.strokeStyle = on ? 'rgba(255,255,255,.5)' : 'rgba(255,77,77,.5)'; ctx.lineWidth = 3;
+        for (let i = 1; i <= 3; i++) { const yy = b.y + (b.h * i) / 4; ctx.beginPath(); ctx.moveTo(b.x + 12, yy); ctx.lineTo(b.x + b.w - 12, yy); ctx.stroke(); }
+        ctx.globalAlpha = 1; ctx.fillStyle = '#fff'; ctx.font = '900 12px system-ui, sans-serif';
+        ctx.fillText('BRAKE', b.x + b.w / 2, b.y + b.h + 12);
+      }
+      if (st.mode === 'wheel') {
+        // the steering wheel, turned as far as the thumb turned it
+        const w = L.wheel;
+        ctx.save(); ctx.translate(w.x, w.y); ctx.rotate(st.angle);
+        ctx.globalAlpha = st.wheelId !== null ? 0.95 : 0.7;
+        ctx.strokeStyle = 'rgba(12,10,29,.7)'; ctx.lineWidth = w.r * 0.3; ctx.beginPath(); ctx.arc(0, 0, w.r * 0.86, 0, Math.PI * 2); ctx.stroke();
+        ctx.strokeStyle = '#ece9ff'; ctx.lineWidth = w.r * 0.2; ctx.beginPath(); ctx.arc(0, 0, w.r * 0.86, 0, Math.PI * 2); ctx.stroke();
+        ctx.strokeStyle = '#ff3d9a'; ctx.lineWidth = w.r * 0.2; ctx.beginPath(); ctx.arc(0, 0, w.r * 0.86, -Math.PI / 2 - 0.22, -Math.PI / 2 + 0.22); ctx.stroke(); // top mark
+        ctx.strokeStyle = '#ece9ff'; ctx.lineWidth = w.r * 0.13; ctx.lineCap = 'round';
+        ctx.beginPath(); ctx.moveTo(-w.r * 0.78, 0); ctx.lineTo(w.r * 0.78, 0); ctx.moveTo(0, 0); ctx.lineTo(0, w.r * 0.78); ctx.stroke();
+        ctx.fillStyle = '#15122e'; ctx.beginPath(); ctx.arc(0, 0, w.r * 0.26, 0, Math.PI * 2); ctx.fill();
+        ctx.strokeStyle = '#ece9ff'; ctx.lineWidth = 3; ctx.stroke();
+        ctx.restore();
       }
       ctx.restore();
-      ctx.save();
-      if (tiltActive() && performance.now() - tilt.usedAt > 4000) {
-        // until they've steered a bit: how it works
-        ctx.font = '800 12px system-ui, sans-serif'; ctx.textAlign = 'left'; ctx.fillStyle = 'rgba(236,233,255,.85)';
-        ctx.fillText('Tilt the phone to steer · hold the screen to brake', button.x, button.y + button.h + 18);
-      } else if (touch && tilt.on && !tilt.live && tilt.asked) {
-        ctx.font = '800 12px system-ui, sans-serif'; ctx.textAlign = 'left'; ctx.fillStyle = 'rgba(236,233,255,.7)';
-        ctx.fillText('No tilt sensor here: tap the button to drag instead', button.x, button.y + button.h + 18);
+      if (st.mode === 'drag' && st.joy) {
+        ctx.save();
+        const R = 46 / cssScale(), j = st.joy, dx = j.cx - j.ox, dy = j.cy - j.oy, d = Math.hypot(dx, dy), m = d > R ? R / d : 1;
+        ctx.strokeStyle = 'rgba(236,233,255,.3)'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(j.ox, j.oy, R, 0, Math.PI * 2); ctx.stroke();
+        ctx.fillStyle = 'rgba(255,61,154,.4)'; ctx.beginPath(); ctx.arc(j.ox + dx * m, j.oy + dy * m, R * 0.42, 0, Math.PI * 2); ctx.fill();
+        ctx.restore();
       }
-      if (joy) {
-        const R = 46 / cssScale(), dx = joy.cx - joy.ox, dy = joy.cy - joy.oy, d = Math.hypot(dx, dy), m = d > R ? R / d : 1;
-        ctx.strokeStyle = 'rgba(236,233,255,.3)'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(joy.ox, joy.oy, R, 0, Math.PI * 2); ctx.stroke();
-        ctx.fillStyle = 'rgba(255,61,154,.4)'; ctx.beginPath(); ctx.arc(joy.ox + dx * m, joy.oy + dy * m, R * 0.42, 0, Math.PI * 2); ctx.fill();
-      }
-      ctx.restore();
     },
     destroy() { if (typeof window !== 'undefined') window.removeEventListener('devicemotion', onMotion); },
   };
