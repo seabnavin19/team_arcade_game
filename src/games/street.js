@@ -86,6 +86,12 @@ export const atWash = (city, x, y) => city.washes.some(w => inBlock(x, y, w));
 export function driveCar(car, throttle, steer, dt, city, spec = CAR) {
   throttle = Math.max(-1, Math.min(1, throttle || 0));
   steer = Math.max(-1, Math.min(1, steer || 0));
+  // Nose stuck in a wall? Back up for a moment, turning away, then carry on.
+  if (car.backup > 0) {
+    car.backup -= dt;
+    throttle = -0.9;
+    steer = car.backupSteer;
+  }
   const onGrass = tileAt(city, car.x, car.y) === PARK;
   const max = onGrass ? Math.min(spec.max, CAR.grassMax) : spec.max;
   // the gas sets a speed: half throttle cruises at half speed (it slows down to it too)
@@ -97,12 +103,22 @@ export function driveCar(car, throttle, steer, dt, city, spec = CAR) {
   if (Math.abs(car.v) < 2 && !throttle) car.v = 0;
   // Turning: about the same tight circle at any speed (so a corner fits in
   // the road), gentler when crawling, and flipped when reversing.
-  const rate = Math.min(spec.turn, Math.abs(car.v) / 48) * Math.sign(car.v);
+  // (with the gas on, a crawling car can still swing its nose round: arcade handling)
+  const going = car.v !== 0 ? Math.sign(car.v) : Math.sign(throttle);
+  const rate = Math.max(Math.min(spec.turn, Math.abs(car.v) / 48), throttle ? 2.4 : 0) * going;
   car.a += steer * rate * dt;
-  if (car.assist) assist(car, steer, dt);
+  car.bumped = Math.max(0, (car.bumped || 0) - dt);
+  if (car.assist) assist(car, steer, dt, car.bumped > 0);
   car.x += Math.cos(car.a) * car.v * dt;
   car.y += Math.sin(car.a) * car.v * dt;
-  return collideWalls(car, city);
+  const hit = collideWalls(car, city);
+  // pushing forward into a wall and hardly moving → reverse out of it
+  car.pressing = hit > 0 && throttle > 0 && car.v < 60 ? (car.pressing || 0) + dt : 0;
+  if (car.pressing > 0.3 && !(car.backup > 0)) {
+    car.pressing = 0; car.backup = 0.45;
+    car.backupSteer = steer ? -Math.sign(steer) : (car.lastBackup = -(car.lastBackup || 1)); // reversing flips the steering
+  }
+  return hit;
 }
 
 /**
@@ -110,12 +126,12 @@ export function driveCar(car, throttle, steer, dt, city, spec = CAR) {
  * the car lines itself up with the street it's on and drifts to the middle of
  * the road, so going straight takes no effort and you only steer for turns.
  */
-function assist(car, steer, dt) {
+function assist(car, steer, dt, bumped) {
   if (Math.abs(steer) > 0.15 || Math.abs(car.v) < 40) return;
   const axis = Math.round(car.a / (Math.PI / 2)) * (Math.PI / 2);
   const off = car.a - axis;
   if (Math.abs(off) > 0.5) return; // clearly turning: leave it alone
-  car.a -= off * Math.min(1, 5 * dt);
+  if (!bumped) car.a -= off * Math.min(1, 5 * dt); // (just after a bump, don't fight the slide)
   // middle of the road, across the direction of travel
   const along = Math.abs(Math.cos(axis)) > 0.5; // driving left–right
   const across = along ? car.y : car.x, n = along ? ROWS : COLS;
@@ -131,7 +147,7 @@ function assist(car, steer, dt) {
 /** Push a car out of buildings and the city edge. Returns how hard it hit (0 if it didn't). */
 const wrapA = a => { while (a > Math.PI) a -= 2 * Math.PI; while (a < -Math.PI) a += 2 * Math.PI; return a; };
 function collideWalls(car, city) {
-  let hit = 0;
+  let hit = 0, turned = false;
   const c0 = Math.floor((car.x - CAR_R) / TILE), c1 = Math.floor((car.x + CAR_R) / TILE);
   const r0 = Math.floor((car.y - CAR_R) / TILE), r1 = Math.floor((car.y + CAR_R) / TILE);
   for (let r = r0; r <= r1; r++) for (let c = c0; c <= c1; c++) {
@@ -147,14 +163,18 @@ function collideWalls(car, city) {
     const into = -(Math.cos(car.a) * car.v * dx + Math.sin(car.a) * car.v * dy);
     if (into > 0) {
       hit = Math.max(hit, into);
-      const headOn = into / (Math.abs(car.v) || 1); // 1 = straight at it, 0 = brushing past
+      const headOn = Math.min(1, into / (Math.abs(car.v) || 1)); // 1 = straight at it, 0 = brushing past
+      car.bumped = 0.4;
       if (headOn > 0.85) car.v *= 0.35;
       else {
-        // glancing: turn the nose along the wall and keep most of the speed
-        const tang = Math.atan2(dx, -dy), alt = tang + Math.PI;
-        const pick = Math.abs(wrapA(tang - car.a)) < Math.abs(wrapA(alt - car.a)) ? tang : alt;
-        car.a += wrapA(pick - car.a) * 0.6;
         car.v *= 1 - headOn * 0.5;
+        // glancing at speed: ease the nose along the wall (once per step, gently, so corners don't shake it)
+        if (!turned && Math.abs(car.v) > 60) {
+          const tang = Math.atan2(dx, -dy), alt = tang + Math.PI;
+          const pick = Math.abs(wrapA(tang - car.a)) < Math.abs(wrapA(alt - car.a)) ? tang : alt;
+          car.a += wrapA(pick - car.a) * 0.3;
+          turned = true;
+        }
       }
     }
   }

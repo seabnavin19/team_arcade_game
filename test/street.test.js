@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  buildCity, createStreet, addDriver, setControls, step, botControls, stats, snapshot, tileAt, driveCar,
+  buildCity, createStreet, addDriver, setControls, step, botControls, stats, snapshot, tileAt, driveCar, steerToward,
   TILE, COLS, ROWS, ROAD, BUILDING, WW, WH, MAX_STARS,
 } from '../src/games/street.js';
 import { objective } from '../src/games/heat.js';
@@ -226,5 +226,39 @@ describe('Street Heat handling', () => {
     const car = { x: TILE * 3, y: TILE, a: 0, v: 290, assist: true };
     for (let i = 0; i < 60; i++) driveCar(car, 0.5, 0, 1 / 30, city);
     expect(car.v).toBeGreaterThan(130); expect(car.v).toBeLessThan(160);
+  });
+});
+
+describe('Street Heat never gets stuck', () => {
+  it('nose in a wall with the gas on: it backs out and gets going again', () => {
+    const city = buildCity('stuck');
+    const car = { x: 60, y: 40, a: Math.PI / 2, v: 200, assist: true }; // driving straight at the block below
+    let slowFor = 0, longest = 0;
+    for (let i = 0; i < 120; i++) {
+      driveCar(car, 1, 0, 1 / 30, city); // no steering at all
+      slowFor = Math.abs(car.v) < 25 ? slowFor + 1 / 30 : 0;
+      longest = Math.max(longest, slowFor);
+    }
+    expect(longest).toBeLessThan(0.8);
+    expect(tileAt(city, car.x, car.y)).not.toBe(BUILDING);
+  });
+  it('a phone player steering with lag is never stuck for a second', () => {
+    for (const day of ['a', 'b', 'c']) {
+      const sim = createStreet(day);
+      const d = addDriver(sim, 'you', 'You');
+      let s = 0, slowFor = 0, stuck = 0;
+      for (let i = 0; i < 90 * 30; i++) {
+        const goal = sim.loot[0] || sim.city.hideout;
+        const [, want] = steerToward(sim, d, goal.x, goal.y);
+        s += (want - s) * 0.25;
+        setControls(sim, 'you', 1 - 0.45 * Math.abs(s), s);
+        step(sim, 1 / 30);
+        sim.cops = [];
+        slowFor = Math.abs(d.v) < 25 && d.stun <= 0 ? slowFor + 1 / 30 : 0;
+        if (slowFor > 1 && slowFor - 1 / 30 <= 1) stuck++;
+      }
+      expect(stuck).toBe(0);
+      expect(d.grabs).toBeGreaterThan(8);
+    }
   });
 });

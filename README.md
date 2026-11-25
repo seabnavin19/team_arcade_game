@@ -245,7 +245,7 @@ To update the games, upload a new `arcade.js` with the same name. Players get it
 
 ```bash
 npm install
-npm test                       # 248 automated tests: game rules, saving and conflicts, ranking, the Telegram server, live parties, Duo Mode, the music room
+npm test                       # 250 automated tests: game rules, saving and conflicts, ranking, the Telegram server, live parties, Duo Mode, the music room
 npm run build                  # dist/ (Confluence) and site/ (Telegram / GitHub Pages)
 
 node dev/local-telegram.mjs    # Telegram version with a pretend Telegram + GitHub → http://localhost:8787/play?name=Dara

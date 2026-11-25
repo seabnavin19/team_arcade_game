@@ -57,8 +57,8 @@ export function createHeatView({ ctx, input, send, serverNow, getParty, getMe, c
           mine.x += cx; mine.y += cy;
           for (const h of hist) { h.x += cx; h.y += cy; }
         }
-        // speed and heading follow the server gently too (bumps and police pushes)
-        mine.v = lerp(mine.v, v, 0.15);
+        // speed: only when clearly off (a bump or a police push); small differences are just lag
+        if (Math.abs(v - mine.v) > 120) mine.v = v;
       }
       mine.stun = !!stun;
     }
