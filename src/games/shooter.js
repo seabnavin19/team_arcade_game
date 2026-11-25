@@ -3,7 +3,7 @@
 import { createLoop } from '../core/loop.js';
 import { createRng } from '../core/rng.js';
 import { C, MONO, drawHud, Particles, FloatText } from './draw.js';
-import { W, H, HUD, WAVES, BOSS_HP, createShooter, step } from './shooter-engine.js';
+import { W, H, HUD, TALL, WAVES, BOSS_HP, createShooter, step } from './shooter-engine.js';
 
 const ENEMY_COLOR = { scout: C.magenta, striker: C.yellow, gunner: C.lime };
 const POWER = { spread: { color: C.yellow, label: 'S' }, rapid: { color: C.cyan, label: 'R' }, shield: { color: C.lime, label: '◯' } };
@@ -68,15 +68,17 @@ export default {
   length: '2–3 min',
   better: 'higher',
   width: W, height: H,
+  tall: { width: TALL.w, height: TALL.h }, // used on a phone held upright
   format: s => Math.round(s).toLocaleString('en-US'),
   plausible: (score, seconds) => (score <= 400000 && seconds >= 15 ? { ok: true } : { ok: false }),
   describe: m => (m.won ? `Boss defeated! · ${m.kills} drones · ${m.lives} ${m.lives === 1 ? 'life' : 'lives'} left`
     : `Reached wave ${Math.min(m.wave + 1, WAVES)}${m.wave >= WAVES ? ' (boss)' : ''} · ${m.kills} drones`),
-  start(ctx, { seed, input, sound, onEnd }) {
-    const s = createShooter(seed);
+  start(ctx, { seed, input, sound, onEnd, width = W, height = H }) {
+    const s = createShooter(seed, { w: width, h: height });
+    const FW = s.W, FH = s.H; // field size: 800 × 480, or tall on an upright phone
     const parts = new Particles(), floats = new FloatText();
     const starRng = createRng('stars');
-    const stars = Array.from({ length: 90 }, () => ({ x: starRng.range(0, W), y: starRng.range(HUD, H), z: starRng.range(0.2, 1) }));
+    const stars = Array.from({ length: 90 }, () => ({ x: starRng.range(0, FW), y: starRng.range(HUD, FH), z: starRng.range(0.2, 1) }));
     let mode = 'mouse', shake = 0, bossFlash = 0, banner = { text: 'WAVE 1', until: 1.8 }, endAt = null;
     const hitFlash = new Map();
 
@@ -103,7 +105,7 @@ export default {
 
     const loop = createLoop({
       update(dt) {
-        for (const st of stars) { st.y += 40 * st.z * dt; if (st.y > H) { st.y = HUD; st.x = Math.random() * W; } }
+        for (const st of stars) { st.y += 40 * st.z * dt; if (st.y > FH) { st.y = HUD; st.x = Math.random() * FW; } }
         parts.update(dt); floats.update(dt);
         shake = Math.max(0, shake - dt * 30); bossFlash = Math.max(0, bossFlash - dt);
         for (const [id, v] of hitFlash) { if (v - dt <= 0) hitFlash.delete(id); else hitFlash.set(id, v - dt); }
@@ -136,7 +138,7 @@ export default {
         const t = s.time;
         ctx.save();
         if (shake) ctx.translate((Math.random() - 0.5) * shake, (Math.random() - 0.5) * shake);
-        ctx.fillStyle = C.bg; ctx.fillRect(-12, -12, W + 24, H + 24);
+        ctx.fillStyle = C.bg; ctx.fillRect(-12, -12, FW + 24, FH + 24);
         for (const st of stars) { ctx.globalAlpha = 0.25 + st.z * 0.5; ctx.fillStyle = C.text; ctx.fillRect(st.x, st.y, st.z * 2, st.z * 2); }
         ctx.globalAlpha = 1;
 
@@ -167,17 +169,17 @@ export default {
           ctx.save(); ctx.globalAlpha = Math.min(1, (banner.until - t) * 2);
           ctx.font = '900 italic 44px system-ui, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
           ctx.fillStyle = banner.text.startsWith('BOSS') ? C.red : C.cyan; ctx.shadowColor = ctx.fillStyle; ctx.shadowBlur = 20;
-          ctx.fillText(banner.text, W / 2, H / 2 - 20); ctx.restore();
+          ctx.fillText(banner.text, FW / 2, FH / 2 - 20); ctx.restore();
         }
         if (s.over && s.won) {
           ctx.save(); ctx.font = '900 italic 48px system-ui, sans-serif'; ctx.textAlign = 'center'; ctx.fillStyle = C.yellow; ctx.shadowColor = C.yellow; ctx.shadowBlur = 24;
-          ctx.fillText('BOSS DOWN!', W / 2, H / 2); ctx.restore();
+          ctx.fillText('BOSS DOWN!', FW / 2, FH / 2); ctx.restore();
         }
         ctx.restore();
 
         const mult = s.time - s.lastKill <= 2 ? Math.min(5, 1 + Math.floor(s.streak / 3)) : 1;
         const stage = s.phase === 'boss' || s.wave >= WAVES ? 'BOSS' : `WAVE ${s.wave + 1}/${WAVES}`;
-        drawHud(ctx, W, {
+        drawHud(ctx, FW, {
           left: `SCORE ${Math.round(s.score).toLocaleString('en-US')}${mult > 1 ? `  x${mult}` : ''}`,
           right: `${stage}   ${'▲'.repeat(Math.max(0, s.lives))}`,
           progress: s.boss ? s.boss.hp / BOSS_HP : 1 - Math.min(1, s.wave / WAVES),
@@ -187,7 +189,7 @@ export default {
         if (s.time < p.rapidUntil) pu.push(['RAPID', C.cyan, p.rapidUntil - s.time]);
         if (pu.length) {
           ctx.save(); ctx.font = MONO; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-          pu.forEach(([label, color, left], i) => { ctx.fillStyle = color; ctx.fillText(`${label} ${Math.ceil(left)}s`, W / 2 + (i - (pu.length - 1) / 2) * 150, 26); });
+          pu.forEach(([label, color, left], i) => { ctx.fillStyle = color; ctx.fillText(`${label} ${Math.ceil(left)}s`, FW / 2 + (i - (pu.length - 1) / 2) * 150, 26); });
           ctx.restore();
         }
       },

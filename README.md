@@ -15,7 +15,7 @@ The same games run in two places:
 | 💡 **Brain Race** | 8 IQ puzzles (patterns, maths, missing numbers, largest value, time, odd one out), 10 s each, one try. Tap or press 1–4. | Points: 500 + up to 500 for speed per right answer (higher is better) |
 
 Everyone gets the same waves, targets, cards, passage and puzzles on the same day, and they change daily.
-While you play, the game takes the whole window and scales up to fill it (Esc or **Quit** to go back). On a phone held sideways, Quit and Full screen sit in a slim column beside the game. On a phone held upright, the game turns sideways to fill the screen: turn the phone to play (works with rotation locked too).
+While you play, the game takes the whole window and scales up to fill it (Esc or **Quit** to go back). On a phone held sideways, Quit and Full screen sit in a slim column beside the game. On a phone held upright, Drone Shooter switches to a tall field that fills the screen the right way up (same waves, same pace, so scores stay comparable); the other solo games show at full width.
 Boards reset every Monday at 00:00 Cambodia time (UTC+7).
 
 ---
@@ -238,7 +238,7 @@ To update the games, upload a new `arcade.js` with the same name. Players get it
 
 ```bash
 npm install
-npm test                       # 220 automated tests: game rules, saving and conflicts, ranking, the Telegram server, live parties, Duo Mode, the music room
+npm test                       # 221 automated tests: game rules, saving and conflicts, ranking, the Telegram server, live parties, Duo Mode, the music room
 npm run build                  # dist/ (Confluence) and site/ (Telegram / GitHub Pages)
 
 node dev/local-telegram.mjs    # Telegram version with a pretend Telegram + GitHub → http://localhost:8787/play?name=Dara

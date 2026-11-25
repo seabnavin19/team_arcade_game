@@ -64,3 +64,21 @@ describe('drone shooter', () => {
     }
   });
 });
+
+describe('Drone Shooter on a tall (upright phone) field', () => {
+  it('keeps everything inside the narrow field and takes about as long', async () => {
+    const { createShooter, step, TALL } = await import('../src/games/shooter-engine.js');
+    const run = size => {
+      const s = createShooter('2026-11-25', size);
+      let maxX = 0;
+      while (!s.over && s.time < 60) { step(s, 1 / 60, { pointer: { x: s.W / 2, y: s.H - 40 } }); for (const e of s.enemies) maxX = Math.max(maxX, e.x); }
+      return { s, maxX };
+    };
+    const wide = run(), tall = run(TALL);
+    expect(tall.s.W).toBe(480);
+    expect(tall.maxX).toBeLessThan(480);
+    expect(tall.s.player.y).toBeGreaterThan(TALL.h - 240);
+    // same waves at the same pace: the tall run gets about as far in a minute
+    expect(Math.abs(tall.s.wave - wide.s.wave)).toBeLessThanOrEqual(1);
+  });
+});

@@ -98,11 +98,7 @@
 #team-arcade .ta[data-ta].is-playing .ta-canvas-wrap { flex: 1 1 0; min-height: 0; width: 100%; max-width: none; margin: 0; display: flex; align-items: center; justify-content: center; }
 #team-arcade .ta[data-ta].is-playing .ta-canvas-wrap canvas { flex: none; }
 #team-arcade .ta[data-ta].is-playing .ta-rotate { flex: none; margin-top: 6px; }
-/* phone held upright: the whole game is turned sideways to fill the screen (see shouldTurn in app.js) */
-#team-arcade .ta[data-ta].is-playing.is-turned { padding: 0; }
-#team-arcade .ta[data-ta].is-playing.is-turned .ta-stage { position: fixed; top: 0; left: var(--ta-vw, 100vw); width: var(--ta-vh, 100vh); height: var(--ta-vw, 100vw); padding: 8px 10px; transform-origin: top left; transform: rotate(90deg); flex-direction: row; }
-#team-arcade .ta[data-ta].is-playing.is-turned .ta-stage-bar { flex-direction: column; justify-content: flex-start; margin: 0 8px 0 0; gap: 8px; }
-#team-arcade .ta[data-ta].is-playing.is-turned .ta-stage-title, #team-arcade .ta[data-ta].is-playing.is-turned .ta-stage-hint, #team-arcade .ta[data-ta].is-playing.is-turned .ta-rotate { display: none; }
+#team-arcade .ta[data-ta].is-playing.is-tall .ta-rotate { display: none; } /* the tall shooter needs no 'turn your phone' tip */
 @media (orientation: landscape) and (max-height: 560px) {
   #team-arcade .ta[data-ta].is-playing .ta-stage { flex-direction: row; }
   #team-arcade .ta[data-ta].is-playing .ta-stage-bar { flex-direction: column; justify-content: flex-start; margin: 0 8px 0 0; gap: 8px; }

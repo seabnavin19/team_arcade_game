@@ -5,10 +5,13 @@
 import { createRng } from '../core/rng.js';
 
 export const W = 800, H = 480, HUD = 56;
+// On an upright phone the field is tall instead of wide. Everything is laid out
+// for 800 × 480 and then stretched to the field, and enemies fall a little
+// faster, so a run takes the same time and scores stay comparable.
+export const TALL = { w: 480, h: 920 };
 export const MAX_TIME = 240; // safety cap: the boss leaves after 4 minutes
 export const LIVES = 3;
 export const WAVES = 6;
-const PLAYER_Y_MIN = 250, PLAYER_Y_MAX = H - 24;
 
 export const ENEMY = {
   scout: { hp: 1, r: 14, points: 100 },
@@ -58,10 +61,11 @@ export function dropFor(seed, enemyId) {
 
 export const multiplierFor = streak => Math.min(5, 1 + Math.floor(streak / 3));
 
-export function createShooter(seed) {
+export function createShooter(seed, { w = W, h = H } = {}) {
   const s = {
+    W: w, H: h, sx: w / W, sy: h / H,
     seed, waves: buildWaves(seed), time: 0, score: 0, lives: LIVES, streak: 0, lastKill: -99,
-    player: { x: W / 2, y: H - 50, r: 11, inv: 0, shield: false, spreadUntil: 0, rapidUntil: 0, fireCd: 0.5 },
+    player: { x: w / 2, y: h - 50, r: 11, inv: 0, shield: false, spreadUntil: 0, rapidUntil: 0, fireCd: 0.5 },
     bullets: [], enemyBullets: [], enemies: [], powerups: [],
     phase: 'banner', wave: 0, waveTime: 0, spawnIdx: 0, bannerUntil: 1.8, nextId: 1,
     boss: null, kills: 0, over: false, won: false, events: [],
@@ -102,7 +106,8 @@ function killEnemy(s, e) {
 
 function spawnEnemy(s, sp, speed) {
   const base = ENEMY[sp.type];
-  s.enemies.push({ id: s.nextId++, ...sp, x: sp.x, y: -24, x0: sp.x, age: 0, hp: base.hp, r: base.r, speed, fireCd: sp.fireEvery || 0, state: 'enter' });
+  const x = Math.round(sp.x * s.sx);
+  s.enemies.push({ id: s.nextId++, ...sp, amp: (sp.amp || 0) * s.sx, stopY: (sp.stopY || 0) * s.sy, x, y: -24, x0: x, age: 0, hp: base.hp, r: base.r, speed, fireCd: sp.fireEvery || 0, state: 'enter' });
 }
 
 function aimed(s, x, y, speed, spread = 0) {
@@ -112,34 +117,34 @@ function aimed(s, x, y, speed, spread = 0) {
 
 function updateEnemy(s, e, dt) {
   e.age += dt;
-  const k = e.speed;
+  const k = e.speed, fall = s.sy;
   if (e.type === 'scout') {
-    e.y += 95 * k * dt;
+    e.y += 95 * k * fall * dt;
     e.x = e.x0 + Math.sin(e.age * e.freq + e.phase) * e.amp;
   } else if (e.type === 'striker') {
-    if (e.state === 'enter') { e.y += 170 * k * dt; if (e.y >= 120) { e.state = 'hover'; e.hoverLeft = e.hover; } }
+    if (e.state === 'enter') { e.y += 170 * k * fall * dt; if (e.y >= 120 * fall) { e.state = 'hover'; e.hoverLeft = e.hover; } }
     else if (e.state === 'hover') {
       e.hoverLeft -= dt;
       if (e.hoverLeft <= 0) { e.state = 'dive'; const a = Math.atan2(s.player.y - e.y, s.player.x - e.x); e.vx = Math.cos(a) * 330 * k; e.vy = Math.max(160, Math.sin(a) * 330 * k); }
     } else { e.x += e.vx * dt; e.y += e.vy * dt; }
   } else if (e.type === 'gunner') {
-    if (e.state === 'enter') { e.y += 120 * k * dt; if (e.y >= e.stopY) { e.state = 'strafe'; e.strafeAge = 0; } }
+    if (e.state === 'enter') { e.y += 120 * k * fall * dt; if (e.y >= e.stopY) { e.state = 'strafe'; e.strafeAge = 0; } }
     else if (e.state === 'strafe') {
       e.strafeAge += dt;
-      e.x = e.x0 + Math.sin(e.strafeAge * 0.9) * 90;
+      e.x = e.x0 + Math.sin(e.strafeAge * 0.9) * 90 * s.sx;
       e.fireCd -= dt;
       if (e.fireCd <= 0) { e.fireCd = e.fireEvery / k; s.enemyBullets.push(aimed(s, e.x, e.y + 10, 210 * k)); ev(s, 'enemyShot'); }
       if (e.strafeAge > 11) e.state = 'leave';
-    } else e.y += 140 * dt;
+    } else e.y += 140 * fall * dt;
   }
 }
 
 function updateBoss(s, dt) {
   const b = s.boss;
   b.age += dt;
-  if (b.y < 110) { b.y += 60 * dt; return; }
+  if (b.y < 110 * s.sy) { b.y += 60 * s.sy * dt; return; }
   const enraged = b.hp < BOSS_HP / 2;
-  b.x = W / 2 + Math.sin(b.age * (enraged ? 0.9 : 0.6)) * 250;
+  b.x = s.W / 2 + Math.sin(b.age * (enraged ? 0.9 : 0.6)) * 250 * s.sx;
   b.fireCd -= dt;
   if (b.fireCd <= 0) {
     b.fireCd = enraged ? 0.85 : 1.25;
@@ -151,7 +156,7 @@ function updateBoss(s, dt) {
     b.minionCd -= dt;
     if (b.minionCd <= 0) {
       b.minionCd = 4.5;
-      for (const dx of [-60, 60]) spawnEnemy(s, { type: 'scout', x: Math.round(b.x + dx), amp: 50, freq: 1.8, phase: dx > 0 ? 0 : Math.PI }, 1.3);
+      for (const dx of [-60, 60]) spawnEnemy(s, { type: 'scout', x: Math.round((b.x + dx * s.sx) / s.sx), amp: 50, freq: 1.8, phase: dx > 0 ? 0 : Math.PI }, 1.3);
     }
   }
 }
@@ -164,6 +169,7 @@ export function step(s, dt, controls = {}) {
   if (s.over) return;
   s.time += dt;
   const p = s.player;
+  const minY = s.H - 230 * s.sy, maxY = s.H - 24;
 
   // --- player movement
   if (controls.dx || controls.dy) {
@@ -171,12 +177,12 @@ export function step(s, dt, controls = {}) {
     p.x += ((controls.dx || 0) / len) * 360 * dt;
     p.y += ((controls.dy || 0) / len) * 360 * dt;
   } else if (controls.pointer) {
-    const tx = controls.pointer.x, ty = Math.max(PLAYER_Y_MIN, controls.pointer.y);
+    const tx = controls.pointer.x, ty = Math.max(minY, controls.pointer.y);
     const d = Math.hypot(tx - p.x, ty - p.y), max = 560 * dt;
     if (d > 0.5) { const m = Math.min(1, max / d); p.x += (tx - p.x) * m; p.y += (ty - p.y) * m; }
   }
-  p.x = Math.max(18, Math.min(W - 18, p.x));
-  p.y = Math.max(PLAYER_Y_MIN, Math.min(PLAYER_Y_MAX, p.y));
+  p.x = Math.max(18, Math.min(s.W - 18, p.x));
+  p.y = Math.max(minY, Math.min(maxY, p.y));
   p.inv = Math.max(0, p.inv - dt);
 
   // --- auto-fire
@@ -192,7 +198,7 @@ export function step(s, dt, controls = {}) {
   if (s.phase === 'banner') {
     if (s.time >= s.bannerUntil) {
       if (s.wave < WAVES) { s.phase = 'wave'; s.waveTime = 0; s.spawnIdx = 0; }
-      else { s.phase = 'boss'; s.boss = { x: W / 2, y: -60, r: 46, hp: BOSS_HP, age: 0, fireCd: 1.5, minionCd: 2 }; ev(s, 'bossIn'); }
+      else { s.phase = 'boss'; s.boss = { x: s.W / 2, y: -60, r: 46, hp: BOSS_HP, age: 0, fireCd: 1.5, minionCd: 2 }; ev(s, 'bossIn'); }
     }
   } else if (s.phase === 'wave') {
     const wave = s.waves[s.wave];
@@ -211,7 +217,7 @@ export function step(s, dt, controls = {}) {
   for (const b of s.bullets) { b.x += b.vx * dt; b.y += b.vy * dt; }
   for (const b of s.enemyBullets) { b.x += b.vx * dt; b.y += b.vy * dt; }
   for (const e of s.enemies) updateEnemy(s, e, dt);
-  for (const u of s.powerups) u.y += 85 * dt;
+  for (const u of s.powerups) u.y += 85 * s.sy * dt;
 
   // --- player bullets vs enemies / boss
   for (const b of s.bullets) {
@@ -244,11 +250,11 @@ export function step(s, dt, controls = {}) {
   }
 
   // --- clean up
-  const inside = o => o.x > -40 && o.x < W + 40 && o.y > -80 && o.y < H + 40;
+  const inside = o => o.x > -40 && o.x < s.W + 40 && o.y > -80 && o.y < s.H + 40;
   s.bullets = s.bullets.filter(b => !b.dead && b.y > HUD - 10 && inside(b));
   s.enemyBullets = s.enemyBullets.filter(b => !b.dead && inside(b));
   s.enemies = s.enemies.filter(e => !e.dead && inside(e));
-  s.powerups = s.powerups.filter(u => !u.dead && u.y < H + 20);
+  s.powerups = s.powerups.filter(u => !u.dead && u.y < s.H + 20);
 
   if (s.time >= MAX_TIME) endGame(s, false);
 }
