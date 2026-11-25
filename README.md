@@ -8,7 +8,7 @@ The same games run in two places:
 
 | Game | How it plays | Ranked by |
 |---|---|---|
-| 🚓 **Street Heat** | 90 seconds in a neon city seen from above. Grab the **$** loot at shops (it makes you wanted: up to 6 ★, and more stars bring more police). Lose the cops (stay away from them and the stars fade) or drive through a **CAR WASH**, then bank the loot at the **HIDEOUT**, which stays locked while you're wanted. If the police box you in, you're busted and lose what you carry. Banking several grabs in one trip adds +25% per extra grab. Drive with the arrow keys/WASD (▲ gas, ▼ brake and reverse, ◀ ▶ steer); on a phone the same four arrows are on screen (◀ ▶ bottom left, ▲ ▼ bottom right, press two at once). On a computer you can also hold the mouse and the car drives toward it. On an upright phone you see a tall view of the street. An original game in the spirit of open-world crime games: driving and chases only. | Cash banked (higher is better) |
+| 🚓 **Street Heat** | 90 seconds in a neon city seen from above. Grab the **$** loot at shops (it makes you wanted: up to 6 ★, and more stars bring more police). Lose the cops (stay away from them and the stars fade) or drive through a **CAR WASH**, then bank the loot at the **HIDEOUT**, which stays locked while you're wanted. If the police box you in, you're busted and lose what you carry. Banking several grabs in one trip adds +25% per extra grab. Driving is easy: tap an arrow (keys, WASD, or the D-pad at the bottom left on a phone) for the way you want to go on screen. The car keeps cruising, stays in its lane, follows the road round corners and turns into the next street that way (tap early; a blinking arrow shows the turn is waiting). The opposite arrow turns you round. With a mouse you can also hold the button and the car drives toward it. On an upright phone you see a tall view of the street. An original game in the spirit of open-world crime games: driving and chases only. | Cash banked (higher is better) |
 | 🚀 **Drone Shooter** | Six waves of drones, then a boss. Move with the mouse, arrow keys/WASD, or drag on a touch screen; you fire automatically. Power-ups: **S** spread shot, **R** rapid fire, **◯** shield. Quick kills build a multiplier up to x5. | Points (higher is better). Beating the boss adds 5,000, plus 1,000 per life left. |
 | ⚡ **Reaction Tap** | Hit shrinking targets for 30 seconds; red targets cost points. | Points (higher is better) |
 | 🧠 **Memory Match** | Find 8 pairs on a 4×4 grid. | Time + 2 s for every move beyond 8 (lower is better) |
@@ -245,7 +245,7 @@ To update the games, upload a new `arcade.js` with the same name. Players get it
 
 ```bash
 npm install
-npm test                       # 250 automated tests: game rules, saving and conflicts, ranking, the Telegram server, live parties, Duo Mode, the music room
+npm test                       # 254 automated tests: game rules, saving and conflicts, ranking, the Telegram server, live parties, Duo Mode, the music room
 npm run build                  # dist/ (Confluence) and site/ (Telegram / GitHub Pages)
 
 node dev/local-telegram.mjs    # Telegram version with a pretend Telegram + GitHub → http://localhost:8787/play?name=Dara

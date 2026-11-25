@@ -197,7 +197,7 @@ export function createPartyApp(root, { api, token, sound, onExit, WebSocketImpl 
       el.mode.textContent = g.duo ? '💞 Duo Mode' : '⚡ Live party';
       el.rules.textContent = g.pitch;
       el.controls.textContent = p.game === 'heat'
-        ? 'Controls: arrow keys or WASD: ▲ gas, ▼ brake (hold to reverse), ◀ ▶ steer. On a phone the same arrows are on screen: ◀ ▶ bottom left, ▲ ▼ bottom right. Press two at once to steer while driving.'
+        ? 'Controls: tap an arrow for the way you want to go (arrow keys, WASD, or the pad at the bottom left on a phone). The car keeps driving, follows the road and turns into the next street that way, so you can tap early. The opposite arrow turns you round.'
         : p.game === 'battle'
         ? 'Controls: move with the mouse, arrow keys or WASD. On a phone, put your thumb down anywhere and drag: it works like a joystick.'
         : p.game === 'quiz' ? 'Controls: tap an answer, or press 1–4. You get one try per puzzle.'

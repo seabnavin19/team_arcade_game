@@ -254,6 +254,84 @@ function clearLine(city, x0, y0, x1, y1) {
   return true;
 }
 
+// ---------------------------------------------------------------- easy driving
+const AXES = { right: [1, 0], down: [0, 1], left: [-1, 0], up: [0, -1] };
+/** Middles of the roads that run along one axis: every 6 tiles, plus the city edge. */
+function roadCenters(n) { const out = []; for (let t = 1; t < n; t += 6) out.push(t * TILE); out.push((n - 1) * TILE); return out; }
+const X_CENTERS = roadCenters(COLS), Y_CENTERS = roadCenters(ROWS);
+const nearest = (list, v) => list.reduce((a, b) => (Math.abs(b - v) < Math.abs(a - v) ? b : a));
+const open = (city, x, y) => drivable(tileAt(city, x, y));
+
+/**
+ * Easy driving (phones and arrow keys): `want` is a direction on screen
+ * ('up', 'down', 'left', 'right'). The car cruises along the road it's on,
+ * stays in the middle, follows the road round corners, and turns into the
+ * next street on the `want` side when it gets there, so a turn can be asked
+ * for early. The opposite direction brakes and turns round.
+ * Returns [throttle, steer] for driveCar.
+ */
+export function easyDrive(city, car, want) {
+  if (!want || !AXES[want]) return [0, 0];
+  const [wx, wy] = AXES[want];
+  const speed = Math.abs(car.v);
+  const H = Math.round(car.a / (Math.PI / 2)) * (Math.PI / 2);
+  const hx = Math.round(Math.cos(H)), hy = Math.round(Math.sin(H));
+  const aim = (tx, ty, th) => {
+    let diff = Math.atan2(ty - car.y, tx - car.x) - car.a;
+    while (diff > Math.PI) diff -= 2 * Math.PI;
+    while (diff < -Math.PI) diff += 2 * Math.PI;
+    return [th, Math.max(-1, Math.min(1, diff * 2.2))];
+  };
+  // standing still: face the way you want and go
+  if (speed < 35) {
+    if (open(city, car.x + wx * 50, car.y + wy * 50)) return aim(car.x + wx * 80, car.y + wy * 80, 0.8);
+    return aim(car.x + hx * 80, car.y + hy * 80, 0.8);
+  }
+  // the lane we're in (middle of the road, across the way we're going)
+  const laneX = hx ? null : nearest(X_CENTERS, car.x), laneY = hy ? null : nearest(Y_CENTERS, car.y);
+  const ahead = (d, side = 0) => [hx ? car.x + hx * d : laneX + side, hy ? car.y + hy * d : laneY + side];
+  const straight = (th = 1) => { const [tx, ty] = ahead(70); return aim(hx ? tx : laneX, hy ? ty : laneY, th); };
+  // opposite: brake, then swing round
+  if (wx === -hx && wy === -hy) return speed > 70 ? [-1, 0] : [0.45, 1];
+  // how far until this road ends (city edge, a building across the way…)
+  let endAt = 999;
+  for (let d = 20; d <= 220; d += 10) if (!open(city, ...ahead(d))) { endAt = d; break; }
+  const turnAt = 30 + speed * 0.06; // where a turn has to start, at corner speed
+  const endTurn = sx => aim(car.x + sx[0] * 90 + hx * 15, car.y + sx[1] * 90 + hy * 15, 0.55);
+  const openSide = ([sx, sy]) => open(city, car.x + sx * 70 + hx * Math.max(0, endAt - 40), car.y + sy * 70 + hy * Math.max(0, endAt - 40));
+  if (wx === hx && wy === hy) {
+    if (endAt > 200) return straight();
+    // the road ends: slow down, then follow it round
+    const sides = [[-hy, hx], [hy, -hx]].filter(openSide);
+    if (endAt - 40 > turnAt) return straight(0.55);
+    if (speed > 215) return [-1, 0];
+    return sides.length ? endTurn(sides[0]) : [-1, 0];
+  }
+  // a turn: find the next cross street on that side, ahead of us
+  const along = hx ? car.x : car.y, dir = hx || hy, centers = hx ? X_CENTERS : Y_CENTERS;
+  let best = null;
+  for (const c of centers) {
+    const d = (c - along) * dir;
+    if (d < -22 || d > 600) continue;
+    const cx = hx ? c : laneX, cy = hy ? c : laneY;
+    if (!open(city, cx + wx * TILE * 1.5, cy + wy * TILE * 1.5) || !open(city, cx + wx * TILE * 2.5, cy + wy * TILE * 2.5)) continue;
+    if (!best || d < best.d) best = { d, cx, cy };
+  }
+  if (best && best.d < endAt) {
+    if (best.d <= turnAt) return speed > 215 ? [-1, 0] : aim(best.cx + wx * 90, best.cy + wy * 90, 0.6); // too fast for the corner: brake first
+    if (best.d < 160) return straight(0.65); // slow a little for the corner
+    return straight();
+  }
+  if (endAt <= 200) {
+    // the road ends before any turn that way: slow, then take whichever side is open
+    if (endAt - 40 > turnAt) return straight(0.55);
+    if (speed > 215) return [-1, 0];
+    const sides = [[wx, wy], [-wx, -wy]].filter(openSide);
+    return sides.length ? endTurn(sides[0]) : [-1, 0];
+  }
+  return straight();
+}
+
 // ---------------------------------------------------------------- the game
 /** A new game. mode 'solo' (one driver, 90 s) or 'party' (everyone, 2 min). */
 export function createStreet(seed, { mode = 'solo' } = {}) {

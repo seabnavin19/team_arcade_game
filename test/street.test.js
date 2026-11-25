@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  buildCity, createStreet, addDriver, setControls, step, botControls, stats, snapshot, tileAt, driveCar, steerToward,
+  buildCity, createStreet, addDriver, setControls, step, botControls, stats, snapshot, tileAt, driveCar, steerToward, easyDrive,
   TILE, COLS, ROWS, ROAD, BUILDING, WW, WH, MAX_STARS,
 } from '../src/games/street.js';
 import { objective } from '../src/games/heat.js';
@@ -136,44 +136,81 @@ describe('Street Heat solo game', () => {
   });
 });
 
-describe('Street Heat on-screen arrows', () => {
-  const fakeInput = () => {
-    const ls = { pointerdown: [], pointermove: [], pointerup: [] };
-    return { keys: new Set(), pointer: { inside: false }, on: (t, f) => ls[t]?.push(f), fire: (t, pt, id) => ls[t].forEach(f => f(pt, { pointerId: id })) };
+describe('Street Heat easy driving', () => {
+  const city = buildCity('2026-11-26');
+  const drive = (plan, secs) => {
+    const car = { x: 60, y: 40, a: 0, v: 0, assist: true };
+    let want = null, pi = 0, hard = 0;
+    for (let i = 0; i < secs * 30; i++) {
+      while (pi < plan.length && plan[pi][0] <= i / 30) want = plan[pi++][1];
+      if (driveCar(car, ...easyDrive(city, car, want), 1 / 30, city) > 120) hard++;
+    }
+    return { car, hard };
   };
-  it('▲ drives, ◀ ▶ steer (two thumbs at once), ▼ brakes, letting go stops pressing', async () => {
+  it('one tap and the car cruises down the road, in the middle of the lane', () => {
+    const { car, hard } = drive([[0, 'right']], 4);
+    expect(hard).toBe(0);
+    expect(car.x).toBeGreaterThan(800);
+    expect(Math.abs(car.y - 40)).toBeLessThan(4);
+  });
+  it('tapping ▼ early turns into the next street down, lined up, without hitting anything', () => {
+    const { car, hard } = drive([[0, 'right'], [0.3, 'down']], 4);
+    expect(hard).toBe(0);
+    expect(Math.abs(car.x - 280)).toBeLessThan(6); // the first street down
+    expect(car.y).toBeGreaterThan(500);
+  });
+  it('follows the road round the corner of the city instead of crashing', () => {
+    const { car, hard } = drive([[0, 'right']], 12);
+    expect(hard).toBe(0);
+    expect(car.x).toBeGreaterThan(2080); // went round the top-right corner…
+    expect(car.y).toBeGreaterThan(400); // …and on down the side
+  });
+  it('the opposite arrow turns the car round', () => {
+    const { car } = drive([[0, 'right'], [2, 'left']], 6);
+    expect(Math.cos(car.a)).toBeLessThan(-0.9);
+  });
+  it('random tapping for 90 s: never stuck, barely a bump', () => {
+    let r = 3; const rnd = () => (r = (r * 16807) % 2147483647) / 2147483647;
+    const plan = []; for (let t = 0; t < 90; t += 0.5 + rnd() * 3) plan.push([t, ['up', 'down', 'left', 'right'][Math.floor(rnd() * 4)]]);
+    const car = { x: 60, y: 40, a: 0, v: 0, assist: true };
+    let want = null, pi = 0, slow = 0, stuck = 0, hard = 0;
+    for (let i = 0; i < 90 * 30; i++) {
+      while (pi < plan.length && plan[pi][0] <= i / 30) want = plan[pi++][1];
+      if (driveCar(car, ...easyDrive(city, car, want), 1 / 30, city) > 120) hard++;
+      slow = Math.abs(car.v) < 25 ? slow + 1 / 30 : 0;
+      if (slow > 1.5 && slow - 1 / 30 <= 1.5) stuck++;
+    }
+    expect(stuck).toBe(0);
+    expect(hard).toBeLessThanOrEqual(5);
+  });
+});
+
+describe('Street Heat D-pad', () => {
+  const fakeInput = () => {
+    const ls = { pointerdown: [], pointermove: [], pointerup: [], keydown: [] };
+    return { keys: new Set(), pointer: { inside: false }, on: (t, f) => ls[t]?.push(f), fire: (t, pt, id) => ls[t].forEach(f => f(pt, { pointerId: id })), key: k => ls.keydown.forEach(f => f({ key: k })) };
+  };
+  it('a tap (or a key) picks the way to go, and it sticks after letting go', async () => {
     globalThis.window ||= { matchMedia: () => ({ matches: true }), addEventListener() {}, removeEventListener() {} };
     globalThis.navigator ||= { maxTouchPoints: 5 };
     const { createDriveControls, padLayout } = await import('../src/games/street-draw.js');
+    const city = buildCity('pad');
     const input = fakeInput();
-    const c = createDriveControls(input, { toWorld: (x, y) => ({ x, y }), screen: () => ({ w: 480, h: 860 }) });
+    const c = createDriveControls(input, { toWorld: (x, y) => ({ x, y }), city: () => city, screen: () => ({ w: 480, h: 860 }) });
     const L = padLayout(480, 860), mid = r => ({ x: r.x + r.w / 2, y: r.y + r.h / 2, type: 'touch', down: true });
-    const car = { x: 0, y: 0, a: 0, v: 0 };
-    expect(c.read(car)).toEqual([0, 0]); // nothing pressed: the car doesn't drive by itself
-    input.fire('pointerdown', mid(L.up), 1);
-    expect(c.read(car)).toEqual([1, 0]);
-    input.fire('pointerdown', mid(L.right), 2); // second thumb
-    expect(c.read(car)).toEqual([0.6, 1]); // turning eases off the gas a bit
-    input.fire('pointermove', mid(L.left), 2); // slide over to ◀
-    expect(c.read(car)).toEqual([0.6, -1]);
-    input.fire('pointerup', { type: 'touch' }, 1);
-    input.fire('pointerdown', mid(L.down), 3);
-    expect(c.read(car)).toEqual([-1, -1]);
-    input.fire('pointerup', { type: 'touch' }, 2); input.fire('pointerup', { type: 'touch' }, 3);
-    expect(c.read(car)).toEqual([0, 0]);
-    // a tap away from the arrows does nothing
-    input.fire('pointerdown', { x: 240, y: 300, type: 'touch', down: true }, 4);
-    expect(c.read(car)).toEqual([0, 0]);
-  });
-  it('the arrows fit on any screen without overlapping', async () => {
-    const { padLayout } = await import('../src/games/street-draw.js');
-    for (const [w, h] of [[480, 860], [800, 480], [1280, 720]]) {
-      const L = padLayout(w, h);
-      for (const k of ['left', 'right', 'up', 'down']) { expect(L[k].x).toBeGreaterThanOrEqual(0); expect(L[k].x + L[k].w).toBeLessThanOrEqual(w); expect(L[k].y + L[k].h).toBeLessThanOrEqual(h); }
-      expect(L.right.x).toBeGreaterThan(L.left.x + L.left.w);
-      expect(L.up.y + L.up.h).toBeLessThan(L.down.y);
-      expect(L.right.x + L.right.w).toBeLessThan(L.up.x);
-    }
+    expect(c.want).toBeNull();
+    expect(c.read({ x: 60, y: 40, a: 0, v: 0 })).toEqual([0, 0]); // waits for the first tap
+    input.fire('pointerdown', mid(L.right), 1); input.fire('pointerup', { type: 'touch' }, 1);
+    expect(c.want).toBe('right');
+    expect(c.read({ x: 60, y: 40, a: 0, v: 0 })[0]).toBeGreaterThan(0); // still going after letting go
+    input.fire('pointerdown', { x: L.cx + 5, y: L.cy + L.size * 1.3, type: 'touch', down: true }, 2); // near ▼, not exactly on it
+    expect(c.want).toBe('down');
+    input.fire('pointermove', mid(L.left), 2);
+    expect(c.want).toBe('left');
+    input.key('ArrowUp');
+    expect(c.want).toBe('up');
+    input.fire('pointerdown', { x: 400, y: 200, type: 'touch', down: true }, 3); // a tap on the street does nothing
+    expect(c.want).toBe('up');
   });
 });
 

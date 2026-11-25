@@ -29,6 +29,7 @@ export function createHeatView({ ctx, input, send, serverNow, getParty, getMe, c
   const controls = createDriveControls(input, {
     toWorld: (x, y) => ({ x: x + (cam?.x || 0), y: y + (cam?.y || 0) }),
     screen: () => ({ w: view.sw, h: view.sh }),
+    city: () => city,
     cssScale: () => view.css || 1,
   });
   const say = (text, col, ms = 1600) => { banner = { text, col, until: performance.now() + ms }; };
@@ -128,6 +129,7 @@ export function createHeatView({ ctx, input, send, serverNow, getParty, getMe, c
     for (const c of cops) drawCar(ctx, c.x, c.y, c.a, '#fff', { police: true, t });
     const my = last.cars.find(c => c[0] === myIdx);
     drawCar(ctx, mine.x, mine.y, mine.a, color(me), { glow: (my?.[7] || 0) > 0, ghost: mine.stun });
+    controls.drawIntent(ctx, mine, t);
     if (my?.[8] > 0) { ctx.save(); ctx.strokeStyle = C.red; ctx.lineWidth = 4; ctx.beginPath(); ctx.arc(mine.x, mine.y, 26, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * Math.min(1, my[8] / 1.1)); ctx.stroke(); ctx.restore(); }
     parts.draw(ctx); floats.draw(ctx);
     // where to go next
@@ -152,7 +154,7 @@ export function createHeatView({ ctx, input, send, serverNow, getParty, getMe, c
     const mw = narrow ? 120 : 150;
     drawMinimap(ctx, city, view.sw - mw - 10, 66, mw, { me: mine, others, cops, loot }, t);
     if (banner && banner.until > performance.now()) {
-      ctx.save(); ctx.font = `900 ${narrow ? 17 : 22}px system-ui, sans-serif`; ctx.textAlign = 'center';
+      ctx.save(); let fs = narrow ? 17 : 22; ctx.font = `900 ${fs}px system-ui, sans-serif`; while (ctx.measureText(banner.text).width > view.sw - 40 && fs > 11) { fs--; ctx.font = `900 ${fs}px system-ui, sans-serif`; } ctx.textAlign = 'center';
       const tw = ctx.measureText(banner.text).width, by = Math.round(view.sh * 0.62);
       ctx.fillStyle = 'rgba(7,6,26,.6)'; ctx.fillRect(view.sw / 2 - tw / 2 - 14, by - 26, tw + 28, 38);
       ctx.fillStyle = banner.col; ctx.shadowColor = banner.col; ctx.shadowBlur = 10; ctx.fillText(banner.text, view.sw / 2, by); ctx.restore();

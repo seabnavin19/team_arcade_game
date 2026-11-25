@@ -1,7 +1,7 @@
 // Street Heat drawing and controls, shared by the solo game and the party view.
 // Night-time neon city seen from above. Only what's on screen is drawn.
 
-import { TILE, COLS, ROWS, WW, WH, BUILDING, PARK, HIDEOUT, WASH, MAX_STARS } from './street.js';
+import { TILE, COLS, ROWS, WW, WH, BUILDING, PARK, HIDEOUT, WASH, MAX_STARS, easyDrive } from './street.js';
 import { C } from './draw.js';
 
 export const CAR_COLORS = ['#ff3d9a', '#2de2e6', '#ffd23f', '#9cff57', '#b18cff', '#ff8a3d', '#5aa9ff', '#ff6b6b'];
@@ -170,93 +170,94 @@ export function drawPointer(ctx, cam, from, to, color, label) {
 }
 
 // ---------------------------------------------------------------- controls
-/** Where the on-screen arrow buttons sit, for a screen of w × h game units. */
+/** Where the on-screen D-pad sits (bottom left), for a screen of w × h game units. */
 export function padLayout(w, h) {
-  const b = Math.round(Math.max(56, Math.min(84, Math.min(w, h) * 0.15))), m = 14, gap = 10;
-  return {
-    size: b,
-    left: { x: m, y: h - m - b, w: b, h: b },
-    right: { x: m + b + gap, y: h - m - b, w: b, h: b },
-    up: { x: w - m - b, y: h - m - b * 2 - gap, w: b, h: b },
-    down: { x: w - m - b, y: h - m - b, w: b, h: b },
-  };
+  const b = Math.round(Math.max(52, Math.min(78, Math.min(w, h) * 0.14))), m = 14;
+  const cx = m + b * 1.5, cy = h - m - b * 1.5;
+  const at = (dx, dy) => ({ x: cx + dx * b - b / 2, y: cy + dy * b - b / 2, w: b, h: b });
+  return { size: b, cx, cy, up: at(0, -1), down: at(0, 1), left: at(-1, 0), right: at(1, 0) };
 }
+const ARROWS = ['up', 'down', 'left', 'right'];
+const KEY_DIR = { ArrowUp: 'up', w: 'up', W: 'up', ArrowDown: 'down', s: 'down', S: 'down', ArrowLeft: 'left', a: 'left', A: 'left', ArrowRight: 'right', d: 'right', D: 'right' };
+const DIR_ANGLE = { right: 0, down: Math.PI / 2, left: Math.PI, up: -Math.PI / 2 };
 const wrap = a => { while (a > Math.PI) a -= 2 * Math.PI; while (a < -Math.PI) a += 2 * Math.PI; return a; };
-const ARROWS = ['left', 'right', 'up', 'down'];
 
 /**
- * Driving controls → [throttle, steer].
- * Phone: four arrow buttons on screen, like the keyboard: ◀ ▶ steer (bottom
- * left), ▲ gas and ▼ brake / reverse (bottom right). Press two at once to
- * steer while driving. Slide a thumb from ◀ to ▶ and it follows.
- * Computer: ↑/W gas, ↓/S brake & reverse, ←→/AD steer; or hold the mouse
- * button and the car drives toward the pointer.
- * Either way the car eases off the gas a little in a turn, so corners fit.
- * `toWorld(x, y)` turns a screen position into city coordinates and
- * `screen()` gives the screen size in game units.
+ * Easy controls → [throttle, steer]. The arrows (on-screen D-pad, arrow keys
+ * or WASD) mean directions on the screen: ▶ = go right, whichever way the car
+ * faces. One tap is enough: the car keeps cruising, follows the road, and
+ * turns into the next street that way when it gets there, so you can tap
+ * early. The opposite arrow brakes and turns round. (The driving itself is
+ * easyDrive in street.js.) With a mouse you can also hold the button and the
+ * car drives toward the pointer.
  */
-export function createDriveControls(input, { toWorld, screen = () => ({ w: 800, h: 480 }) }) {
+export function createDriveControls(input, { toWorld, city, screen = () => ({ w: 800, h: 480 }) }) {
   const touch = typeof window !== 'undefined' && (window.matchMedia?.('(hover: none) and (pointer: coarse)').matches || navigator.maxTouchPoints > 0);
-  const held = new Map(); // finger id → which arrow it's on
-  let mouseDown = false;
+  let want = null, mouseDown = false;
+  const fingers = new Map(); // finger id → arrow it's on
   const pads = () => { const { w, h } = screen(); return padLayout(w, h); };
-  // a little forgiving: a thumb just outside a button still counts
+  // which arrow a thumb is on: by direction from the pad's middle, so it's forgiving
   const arrowAt = pt => {
-    const L = pads(), pad = L.size * 0.25;
-    return ARROWS.find(k => { const r = L[k]; return pt.x >= r.x - pad && pt.x <= r.x + r.w + pad && pt.y >= r.y - pad && pt.y <= r.y + r.h + pad; }) || null;
+    const L = pads(), dx = pt.x - L.cx, dy = pt.y - L.cy;
+    if (Math.hypot(dx, dy) > L.size * 2.1 || Math.hypot(dx, dy) < L.size * 0.25) return null;
+    return Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'right' : 'left') : (dy > 0 ? 'down' : 'up');
   };
+  input.on('keydown', e => { const d = KEY_DIR[e.key]; if (d) want = d; });
   input.on('pointerdown', (pt, e) => {
     if (pt.type === 'mouse' && !touch) { mouseDown = true; return; }
     const a = arrowAt(pt);
-    if (a) held.set(e?.pointerId ?? 0, a);
+    if (a) { fingers.set(e?.pointerId ?? 0, a); want = a; }
   });
   input.on('pointermove', (pt, e) => {
     const id = e?.pointerId ?? 0;
-    if (!held.has(id)) return;
+    if (!fingers.has(id)) return;
     const a = arrowAt(pt);
-    if (a) held.set(id, a); // slid onto another arrow
+    if (a && a !== fingers.get(id)) { fingers.set(id, a); want = a; } // slid onto another arrow
   });
-  input.on('pointerup', (pt, e) => { mouseDown = false; held.delete(e?.pointerId ?? 0); });
-  const pressed = k => [...held.values()].includes(k);
+  input.on('pointerup', (pt, e) => { mouseDown = false; fingers.delete(e?.pointerId ?? 0); });
   const towards = (car, ang, mag) => {
     const diff = wrap(ang - car.a);
     if (Math.abs(diff) > 2.5 && car.v < 80) return [-0.85 * mag, -Math.sign(diff) * Math.min(1, (Math.PI - Math.abs(diff)) * 2.5)];
     return [mag * (Math.abs(diff) > 1.4 ? 0.45 : 1), Math.max(-1, Math.min(1, diff * 2.6))];
   };
   return {
+    get want() { return want; },
     read(car) {
-      const k = input.keys;
-      const up = k.has('ArrowUp') || k.has('w') || k.has('W') || pressed('up');
-      const down = k.has('ArrowDown') || k.has('s') || k.has('S') || pressed('down');
-      const left = k.has('ArrowLeft') || k.has('a') || k.has('A') || pressed('left');
-      const right = k.has('ArrowRight') || k.has('d') || k.has('D') || pressed('right');
-      if (up || down || left || right) {
-        const steer = (right ? 1 : 0) - (left ? 1 : 0);
-        // ease off the gas a little while turning, so a corner fits in the road
-        const throttle = down ? -1 : up ? (steer ? 0.6 : 1) : 0;
-        return [throttle, steer];
-      }
       if (mouseDown && input.pointer.inside) {
+        want = null;
         const w = toWorld(input.pointer.x, input.pointer.y), d = Math.hypot(w.x - car.x, w.y - car.y);
         return d < 18 ? [0, 0] : towards(car, Math.atan2(w.y - car.y, w.x - car.x), Math.min(1, d / 120));
       }
-      return [0, 0];
+      const c = city();
+      return c ? easyDrive(c, car, want) : [0, 0];
     },
-    /** the arrow buttons (screen coordinates) */
+    /** a blinking arrow by the car when a turn is waiting for the next street (world coordinates) */
+    drawIntent(ctx, car, t) {
+      if (!want || Math.floor(t * 4) % 2) return;
+      const heading = Math.round(car.a / (Math.PI / 2)) * (Math.PI / 2);
+      const a = DIR_ANGLE[want];
+      if (Math.abs(wrap(a - heading)) < 0.1 && Math.abs(car.v) > 30) return; // already going that way
+      ctx.save(); ctx.translate(car.x + Math.cos(a) * 30, car.y + Math.sin(a) * 30); ctx.rotate(a);
+      ctx.fillStyle = '#ffd23f'; ctx.shadowColor = '#ffd23f'; ctx.shadowBlur = 8;
+      ctx.beginPath(); ctx.moveTo(9, 0); ctx.lineTo(-5, -7); ctx.lineTo(-2, 0); ctx.lineTo(-5, 7); ctx.closePath(); ctx.fill();
+      ctx.restore();
+    },
+    /** the D-pad (screen coordinates) */
     draw(ctx) {
       if (!touch) return;
       const L = pads();
       ctx.save();
+      ctx.globalAlpha = 0.55; ctx.fillStyle = 'rgba(21,18,46,.8)';
+      ctx.beginPath(); ctx.arc(L.cx, L.cy, L.size * 1.75, 0, Math.PI * 2); ctx.fill();
       for (const k of ARROWS) {
-        const r = L[k], on = pressed(k), col = k === 'up' ? '#9cff57' : k === 'down' ? '#ff4d4d' : '#2de2e6';
-        ctx.globalAlpha = on ? 0.95 : 0.6;
-        ctx.fillStyle = on ? col : 'rgba(21,18,46,.8)'; ctx.strokeStyle = col; ctx.lineWidth = 2.5;
-        roundRect(ctx, r.x, r.y, r.w, r.h, 14); ctx.fill(); ctx.stroke();
-        // the arrow
-        const cx = r.x + r.w / 2, cy = r.y + r.h / 2, a = r.w * 0.22;
-        const dir = { up: -Math.PI / 2, down: Math.PI / 2, left: Math.PI, right: 0 }[k];
-        ctx.save(); ctx.translate(cx, cy); ctx.rotate(dir);
-        ctx.fillStyle = on ? '#0c0a1d' : col;
+        const r = L[k], held = [...fingers.values()].includes(k), chosen = want === k;
+        ctx.globalAlpha = held ? 1 : chosen ? 0.85 : 0.55;
+        ctx.fillStyle = held ? '#2de2e6' : chosen ? 'rgba(45,226,230,.35)' : 'rgba(21,18,46,.85)';
+        ctx.strokeStyle = '#2de2e6'; ctx.lineWidth = 2;
+        roundRect(ctx, r.x + 3, r.y + 3, r.w - 6, r.h - 6, 12); ctx.fill(); ctx.stroke();
+        const cx = r.x + r.w / 2, cy = r.y + r.h / 2, a = r.w * 0.2;
+        ctx.save(); ctx.translate(cx, cy); ctx.rotate(DIR_ANGLE[k]);
+        ctx.fillStyle = held ? '#0c0a1d' : '#2de2e6';
         ctx.beginPath(); ctx.moveTo(a, 0); ctx.lineTo(-a * 0.7, -a); ctx.lineTo(-a * 0.7, a); ctx.closePath(); ctx.fill();
         ctx.restore();
       }

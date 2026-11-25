@@ -25,7 +25,7 @@ export default {
   id: 'heat',
   title: 'Street Heat',
   blurb: 'Grab the loot, lose the cops, bank it at the hideout. 90 seconds in a neon city.',
-  controls: 'Arrow keys/WASD or the on-screen arrows: ▲ gas · ▼ brake · ◀ ▶ steer',
+  controls: 'Tap an arrow (keys, WASD or the on-screen pad) for the way to go: the car follows the road and turns at the next street',
   length: '90 sec',
   better: 'higher',
   plausible: (score, seconds) => (score <= 30000 && seconds >= SOLO_SECONDS - 2 ? { ok: true } : { ok: false }),
@@ -42,9 +42,10 @@ export default {
     const controls = createDriveControls(input, {
       toWorld: (x, y) => ({ x: x + (cam?.x || 0), y: y + (cam?.y || 0) }),
       screen: () => ({ w: width, h: height }),
+      city: () => sim.city,
       cssScale: () => ctx.canvas.getBoundingClientRect().width / width || 1,
     });
-    say('Grab the $ · lose the cops · bank it at the HIDEOUT', C.text, 4);
+    say('Tap an arrow to drive · grab the $ · bank it at the HIDEOUT', C.text, 4);
 
     const loop = createLoop({
       update(dt) {
@@ -75,6 +76,7 @@ export default {
         for (const l of sim.loot) drawLoot(ctx, l, t);
         for (const c of sim.cops) drawCar(ctx, c.x, c.y, c.a, '#fff', { police: true, t });
         drawCar(ctx, me.x, me.y, me.a, CAR_COLORS[0], { glow: me.stars > 0, ghost: me.stun > 0 });
+        controls.drawIntent(ctx, me, t);
         if (me.bust > 0) { ctx.save(); ctx.strokeStyle = C.red; ctx.lineWidth = 4; ctx.beginPath(); ctx.arc(me.x, me.y, 26, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * Math.min(1, me.bust / 1.1)); ctx.stroke(); ctx.restore(); }
         parts.draw(ctx); floats.draw(ctx);
         const goal = objective(sim, me);
@@ -93,7 +95,7 @@ export default {
         const mw = narrow ? 120 : 150;
         drawMinimap(ctx, sim.city, width - mw - 10, HUD + 10, mw, { me, cops: sim.cops, loot: sim.loot }, t);
         if (banner && banner.until > t) {
-          ctx.save(); ctx.font = `900 ${narrow ? 18 : 24}px system-ui, sans-serif`; ctx.textAlign = 'center';
+          ctx.save(); let fs = narrow ? 18 : 24; ctx.font = `900 ${fs}px system-ui, sans-serif`; while (ctx.measureText(banner.text).width > width - 40 && fs > 11) { fs--; ctx.font = `900 ${fs}px system-ui, sans-serif`; } ctx.textAlign = 'center';
           const by = Math.round(height * 0.62); ctx.fillStyle = 'rgba(7,6,26,.6)'; const tw = ctx.measureText(banner.text).width; ctx.fillRect(width / 2 - tw / 2 - 14, by - 28, tw + 28, 40);
           ctx.fillStyle = banner.color; ctx.shadowColor = banner.color; ctx.shadowBlur = 10; ctx.fillText(banner.text, width / 2, by); ctx.restore();
         }
