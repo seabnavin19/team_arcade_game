@@ -151,6 +151,28 @@ export function createApp(root, { store, user, sound, offline = false, touchOnly
     return ctx;
   }
 
+  // While playing, the game fills the window: size the canvas to the space
+  // left under the bar (same shape, sharp on high-DPI screens). Games keep
+  // drawing in their own 800 × 480 units; only the scale changes.
+  function fitCanvas() {
+    const s = state.session;
+    if (!s) return;
+    const wrap = el.canvas.parentElement, bw = wrap.clientWidth, bh = wrap.clientHeight;
+    if (!bw || !bh) return;
+    const { width: gw, height: gh } = s.game;
+    const css = Math.min(bw / gw, bh / gh);
+    const cw = Math.floor(gw * css), ch = Math.floor(gh * css);
+    el.canvas.style.width = `${cw}px`; el.canvas.style.height = `${ch}px`;
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    const pw = Math.round(cw * dpr), ph = Math.round(ch * dpr);
+    if (el.canvas.width === pw && el.canvas.height === ph) return;
+    el.canvas.width = pw; el.canvas.height = ph; // this wipes the canvas and its scale…
+    s.ctx.setTransform(pw / gw, 0, 0, ph / gh, 0, 0); // …so set the scale again; the game redraws next frame
+    if (!s.instance) { s.ctx.fillStyle = '#0c0a1d'; s.ctx.fillRect(0, 0, gw, gh); }
+  }
+  try { new ResizeObserver(() => fitCanvas()).observe(el.canvas.parentElement); } catch { /* old browser */ }
+  window.addEventListener('resize', () => fitCanvas());
+
   function overlay(html) { el.overlay.innerHTML = html; el.overlay.hidden = !html; }
 
   function openGame(id) {
@@ -165,6 +187,7 @@ export function createApp(root, { store, user, sound, offline = false, touchOnly
     const input = createInput(el.canvas, { width: game.width, height: game.height, onEscape: () => closeGame() });
     const session = { game, input, ctx, instance: null, timers: [], startedAt: 0 };
     state.session = session;
+    fitCanvas();
     el.stage.scrollIntoView?.({ block: 'nearest', behavior: 'smooth' });
     el.canvas.focus({ preventScroll: true });
     countdown(session);
@@ -251,6 +274,7 @@ export function createApp(root, { store, user, sound, offline = false, touchOnly
     overlay('');
     el.stage.hidden = true;
     el.app.classList.remove('is-playing');
+    el.canvas.style.width = el.canvas.style.height = '';
     if (document.fullscreenElement === el.stage) document.exitFullscreen?.();
   }
 

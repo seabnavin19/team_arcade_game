@@ -90,6 +90,19 @@
 #team-arcade .ta-stage .ta-btn { margin-top: 0; padding: 7px 12px; }
 #team-arcade .ta-canvas-wrap { position: relative; width: 100%; max-width: min(960px, calc((100vh - 110px) * 800 / 480)); margin: 0 auto; }
 #team-arcade .ta-stage:fullscreen .ta-canvas-wrap { max-width: min(100%, calc((100vh - 70px) * 800 / 480)); }
+/* Playing a solo game: it takes the whole window and the canvas scales to fit (see fitCanvas in app.js) */
+#team-arcade .ta[data-ta].is-playing { position: fixed; inset: 0; z-index: 2147483000; max-width: none; min-height: 0; height: 100%; margin: 0; padding: 6px 8px 8px; border: 0; border-radius: 0; display: flex; flex-direction: column; }
+#team-arcade .ta[data-ta].is-playing > .ta-top { display: none; }
+#team-arcade .ta[data-ta].is-playing .ta-stage { flex: 1; min-height: 0; margin: 0; display: flex; flex-direction: column; }
+#team-arcade .ta[data-ta].is-playing .ta-stage-bar { flex: none; margin-bottom: 6px; }
+#team-arcade .ta[data-ta].is-playing .ta-canvas-wrap { flex: 1 1 0; min-height: 0; width: 100%; max-width: none; margin: 0; display: flex; align-items: center; justify-content: center; }
+#team-arcade .ta[data-ta].is-playing .ta-canvas-wrap canvas { flex: none; }
+#team-arcade .ta[data-ta].is-playing .ta-rotate { flex: none; margin-top: 6px; }
+@media (orientation: landscape) and (max-height: 560px) {
+  #team-arcade .ta[data-ta].is-playing .ta-stage { flex-direction: row; }
+  #team-arcade .ta[data-ta].is-playing .ta-stage-bar { flex-direction: column; justify-content: flex-start; margin: 0 8px 0 0; gap: 8px; }
+  #team-arcade .ta[data-ta].is-playing .ta-stage-title, #team-arcade .ta[data-ta].is-playing .ta-stage-hint { display: none; }
+}
 #team-arcade canvas { display: block; width: 100%; height: auto; border-radius: 12px; border: 1px solid var(--line); cursor: crosshair; outline: none; touch-action: none; user-select: none; }
 #team-arcade .ta-overlay { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; background: rgba(12,10,29,.55); border-radius: 12px; }
 #team-arcade .ta-overlay:empty { display: none; }
