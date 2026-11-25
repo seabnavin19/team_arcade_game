@@ -18,7 +18,7 @@ export const CAR_R = 13;
 export const ROAD = 0, BUILDING = 1, PARK = 2, HIDEOUT = 3, WASH = 4;
 const drivable = k => k !== BUILDING;
 
-const CAR = { acc: 430, brake: 650, max: 300, rev: 140, drag: 1.1, turn: 3.3, grassMax: 170 };
+const CAR = { acc: 430, brake: 650, max: 290, rev: 140, drag: 1.1, turn: 4.2, grassMax: 170 };
 const COP = { max: 262, perStar: 11, acc: 380, turn: 3.0 };
 const BUST_TIME = 1.1, STUN = 1.6, ESCAPE_TIME = 5, ESCAPE_DIST = 380, WASH_COOLDOWN = 12;
 const LOOT_LIVE = 6;
@@ -88,20 +88,48 @@ export function driveCar(car, throttle, steer, dt, city, spec = CAR) {
   steer = Math.max(-1, Math.min(1, steer || 0));
   const onGrass = tileAt(city, car.x, car.y) === PARK;
   const max = onGrass ? Math.min(spec.max, CAR.grassMax) : spec.max;
-  if (throttle > 0) car.v += (car.v < 0 ? spec.brake : spec.acc) * throttle * dt;
+  // the gas sets a speed: half throttle cruises at half speed (it slows down to it too)
+  if (throttle > 0 && car.v > max * throttle) car.v = Math.max(max * throttle, car.v - spec.brake * 0.5 * dt);
+  else if (throttle > 0) car.v += (car.v < 0 ? spec.brake : spec.acc) * dt;
   else if (throttle < 0) car.v += (car.v > 0 ? spec.brake : spec.acc * 0.6) * throttle * dt;
   else car.v -= car.v * spec.drag * dt;
   car.v = Math.max(-CAR.rev, Math.min(max, car.v));
   if (Math.abs(car.v) < 2 && !throttle) car.v = 0;
-  // steering works better at speed, and flips when reversing
-  const grip = Math.max(-1, Math.min(1, car.v / 110));
-  car.a += steer * spec.turn * grip * dt;
+  // Turning: about the same tight circle at any speed (so a corner fits in
+  // the road), gentler when crawling, and flipped when reversing.
+  const rate = Math.min(spec.turn, Math.abs(car.v) / 48) * Math.sign(car.v);
+  car.a += steer * rate * dt;
+  if (car.assist) assist(car, steer, dt);
   car.x += Math.cos(car.a) * car.v * dt;
   car.y += Math.sin(car.a) * car.v * dt;
   return collideWalls(car, city);
 }
 
+/**
+ * Driving help for players (not the police): with the wheel near the middle,
+ * the car lines itself up with the street it's on and drifts to the middle of
+ * the road, so going straight takes no effort and you only steer for turns.
+ */
+function assist(car, steer, dt) {
+  if (Math.abs(steer) > 0.15 || Math.abs(car.v) < 40) return;
+  const axis = Math.round(car.a / (Math.PI / 2)) * (Math.PI / 2);
+  const off = car.a - axis;
+  if (Math.abs(off) > 0.5) return; // clearly turning: leave it alone
+  car.a -= off * Math.min(1, 5 * dt);
+  // middle of the road, across the direction of travel
+  const along = Math.abs(Math.cos(axis)) > 0.5; // driving left–right
+  const across = along ? car.y : car.x, n = along ? ROWS : COLS;
+  const t = Math.floor(across / TILE);
+  const centers = [(Math.floor(t / 6) * 6 + 1) * TILE, (n - 1) * TILE];
+  const c = centers.reduce((a, b) => (Math.abs(b - across) < Math.abs(a - across) ? b : a));
+  if (Math.abs(c - across) < TILE * 0.9) {
+    const nudge = (c - across) * Math.min(1, 1.6 * dt);
+    if (along) car.y += nudge; else car.x += nudge;
+  }
+}
+
 /** Push a car out of buildings and the city edge. Returns how hard it hit (0 if it didn't). */
+const wrapA = a => { while (a > Math.PI) a -= 2 * Math.PI; while (a < -Math.PI) a += 2 * Math.PI; return a; };
 function collideWalls(car, city) {
   let hit = 0;
   const c0 = Math.floor((car.x - CAR_R) / TILE), c1 = Math.floor((car.x + CAR_R) / TILE);
@@ -117,7 +145,18 @@ function collideWalls(car, city) {
     car.x += dx * push; car.y += dy * push;
     // how much of the speed went into the wall
     const into = -(Math.cos(car.a) * car.v * dx + Math.sin(car.a) * car.v * dy);
-    if (into > 0) { hit = Math.max(hit, into); car.v *= into > 140 ? 0.35 : 0.75; }
+    if (into > 0) {
+      hit = Math.max(hit, into);
+      const headOn = into / (Math.abs(car.v) || 1); // 1 = straight at it, 0 = brushing past
+      if (headOn > 0.85) car.v *= 0.35;
+      else {
+        // glancing: turn the nose along the wall and keep most of the speed
+        const tang = Math.atan2(dx, -dy), alt = tang + Math.PI;
+        const pick = Math.abs(wrapA(tang - car.a)) < Math.abs(wrapA(alt - car.a)) ? tang : alt;
+        car.a += wrapA(pick - car.a) * 0.6;
+        car.v *= 1 - headOn * 0.5;
+      }
+    }
   }
   return hit;
 }
@@ -213,7 +252,7 @@ export function addDriver(sim, key, name) {
   const idx = sim.order.length;
   const [c, r] = START_SPOTS[idx % START_SPOTS.length];
   const d = {
-    key, name, idx, x: c * TILE, y: r * TILE, a: c > COLS / 2 ? Math.PI : 0, v: 0,
+    key, name, idx, x: c * TILE, y: r * TILE, a: c > COLS / 2 ? Math.PI : 0, v: 0, assist: true,
     throttle: 0, steer: 0, carry: 0, banked: 0, stars: 0, bust: 0, stun: 0, calm: 0, washCd: 0,
     grabs: 0, busts: 0, rams: 0, steals: 0,
   };
@@ -287,7 +326,7 @@ export function step(sim, dt) {
     d.washCd = Math.max(0, d.washCd - dt);
     if (d.stun > 0) { d.stun -= dt; d.v *= 0.9; driveCar(d, 0, 0, dt, city); continue; }
     const crash = driveCar(d, d.throttle, d.steer, dt, city);
-    if (crash > 170) sim.events.push({ e: 'crash', k });
+    if (crash > 200) sim.events.push({ e: 'crash', k });
     // grab loot
     for (const l of sim.loot) {
       if (l.taken || Math.hypot(l.x - d.x, l.y - d.y) > 26) continue;

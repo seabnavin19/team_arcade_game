@@ -289,7 +289,7 @@ export function createDriveControls(input, { toWorld, screen = () => ({ w: 800, 
     read(car) {
       const now = performance.now(), dt = Math.min(1, (now - last) / 1000); last = now;
       // the wheel springs back to straight when you let go
-      if (st.wheelId === null && st.angle) st.angle = Math.abs(st.angle) < 0.03 ? 0 : st.angle * Math.pow(0.0005, dt);
+      if (st.wheelId === null && st.angle) st.angle = Math.abs(st.angle) < 0.03 ? 0 : st.angle * Math.pow(0.00005, dt);
       const k = input.keys;
       const up = k.has('ArrowUp') || k.has('w') || k.has('W'), down = k.has('ArrowDown') || k.has('s') || k.has('S');
       const left = k.has('ArrowLeft') || k.has('a') || k.has('A'), right = k.has('ArrowRight') || k.has('d') || k.has('D');
@@ -300,8 +300,10 @@ export function createDriveControls(input, { toWorld, screen = () => ({ w: 800, 
       }
       if (!touch) return [0, 0];
       const brake = st.brakeIds.size > 0;
-      if (st.mode === 'wheel') return [brake ? -1 : 1, Math.max(-1, Math.min(1, st.angle / (MAX_TURN * 0.8)))];
-      if (st.mode === 'tilt') return [brake ? -1 : 1, tilt.live ? tilt.steer : 0];
+      // the car eases off by itself in a hard turn, like a driver lifting off the gas
+      const cruise = s => (brake ? -1 : 1 - 0.45 * Math.abs(s));
+      if (st.mode === 'wheel') { const s = Math.max(-1, Math.min(1, st.angle / ((60 * Math.PI) / 180))); return [cruise(s), s]; }
+      if (st.mode === 'tilt') { const s = tilt.live ? tilt.steer : 0; return [cruise(s), s]; }
       if (st.joy) {
         const R = 46 / cssScale(), dx = st.joy.cx - st.joy.ox, dy = st.joy.cy - st.joy.oy, d = Math.hypot(dx, dy);
         return d < R * 0.18 ? [0, 0] : towards(car, Math.atan2(dy, dx), Math.min(1, d / R));

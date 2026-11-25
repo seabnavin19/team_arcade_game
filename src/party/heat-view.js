@@ -44,7 +44,7 @@ export function createHeatView({ ctx, input, send, serverNow, getParty, getMe, c
     if (srv) {
       const [, x, y, a, v, , , , , stun] = srv;
       srvMine = { x, y, a, v };
-      if (!mine || stun) { mine = { x, y, a, v }; hist.length = 0; }
+      if (!mine || stun) { mine = { x, y, a, v, assist: true }; hist.length = 0; }
       else {
         const r = Number.isFinite(rtt()) ? Math.min(600, rtt()) : 150;
         const at = performance.now() - r - 25;

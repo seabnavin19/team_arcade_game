@@ -178,7 +178,7 @@ describe('Street Heat on-screen wheel', () => {
     input.fire('pointermove', { x: w.x + w.r * 0.57, y: w.y - w.r * 0.57, type: 'touch', down: true }, 1);
     input.fire('pointermove', { x: w.x + w.r * 0.8, y: w.y, type: 'touch', down: true }, 1);
     const [th, steer] = c.read(car);
-    expect(th).toBe(1); expect(steer).toBeGreaterThan(0.9); // right
+    expect(th).toBeCloseTo(0.55); expect(steer).toBeGreaterThan(0.9); // right, easing off the gas in the turn
     // second thumb on BRAKE while still steering
     input.fire('pointerdown', { x: b.x + b.w / 2, y: b.y + b.h / 2, type: 'touch', down: true }, 2);
     expect(c.read(car)[0]).toBe(-1);
@@ -192,5 +192,39 @@ describe('Street Heat on-screen wheel', () => {
     input.fire('pointerdown', { x: w.x, y: w.y - w.r * 0.8, type: 'touch', down: true }, 3);
     input.fire('pointermove', { x: w.x - w.r * 0.8, y: w.y, type: 'touch', down: true }, 3);
     expect(c.read(car)[1]).toBeLessThan(-0.9);
+  });
+});
+
+describe('Street Heat handling', () => {
+  it('drives straight by itself when a little off, and slides along walls instead of stopping', () => {
+    const city = buildCity('handling');
+    const car = { x: TILE * 3, y: TILE, a: 0.17, v: 250, assist: true };
+    let scrapes = 0;
+    for (let i = 0; i < 90; i++) if (driveCar(car, 1, 0, 1 / 30, city) > 0) scrapes++;
+    expect(scrapes).toBe(0);
+    expect(Math.abs(car.a)).toBeLessThan(0.02);
+    expect(car.v).toBeGreaterThan(250);
+  });
+  it('a full-lock right turn at cruise makes the corner over a comfortable window', () => {
+    const city = buildCity('handling');
+    let clean = 0;
+    for (let startAt = 150; startAt <= 290; startAt += 10) {
+      const car = { x: 60, y: 40, a: 0, v: 0, assist: true };
+      let turning = false, done = false, hard = 0;
+      for (let i = 0; i < 150; i++) {
+        if (!done && car.x >= startAt) turning = true;
+        if (turning && car.a >= Math.PI / 2 - 0.15) { turning = false; done = true; }
+        const steer = turning ? 1 : 0;
+        if (driveCar(car, 1 - 0.45 * steer, steer, 1 / 30, city) > 120) hard++;
+      }
+      if (hard === 0 && Math.abs(car.x - 280) < 10 && car.y > 600) clean++;
+    }
+    expect(clean).toBeGreaterThanOrEqual(6); // 60+ px of road where turning just works
+  });
+  it('half throttle cruises at about half speed', () => {
+    const city = buildCity('handling');
+    const car = { x: TILE * 3, y: TILE, a: 0, v: 290, assist: true };
+    for (let i = 0; i < 60; i++) driveCar(car, 0.5, 0, 1 / 30, city);
+    expect(car.v).toBeGreaterThan(130); expect(car.v).toBeLessThan(160);
   });
 });
