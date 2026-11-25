@@ -15,7 +15,7 @@ The same games run in two places:
 | 💡 **Brain Race** | 8 IQ puzzles (patterns, maths, missing numbers, largest value, time, odd one out), 10 s each, one try. Tap or press 1–4. | Points: 500 + up to 500 for speed per right answer (higher is better) |
 
 Everyone gets the same waves, targets, cards, passage and puzzles on the same day, and they change daily.
-While you play, the game takes the whole window and scales up to fill it (Esc or **Quit** to go back). On a phone held sideways, Quit and Full screen sit in a slim column beside the game.
+While you play, the game takes the whole window and scales up to fill it (Esc or **Quit** to go back). On a phone held sideways, Quit and Full screen sit in a slim column beside the game. On a phone held upright, the game turns sideways to fill the screen: turn the phone to play (works with rotation locked too).
 Boards reset every Monday at 00:00 Cambodia time (UTC+7).
 
 ---

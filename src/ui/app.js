@@ -154,9 +154,25 @@ export function createApp(root, { store, user, sound, offline = false, touchOnly
   // While playing, the game fills the window: size the canvas to the space
   // left under the bar (same shape, sharp on high-DPI screens). Games keep
   // drawing in their own 800 × 480 units; only the scale changes.
+  // On a phone held upright, the game turns sideways to fill the tall screen
+  // (like most mobile games): the player turns the phone to play. This works
+  // with screen rotation locked; if the phone rotates the page, it's simply
+  // landscape again and nothing is turned.
+  function shouldTurn() {
+    const w = window.innerWidth, h = window.innerHeight;
+    return h > w * 1.15 && w < 700;
+  }
   function fitCanvas() {
     const s = state.session;
     if (!s) return;
+    const turned = shouldTurn();
+    if (el.app.classList.contains('is-turned') !== turned) {
+      el.app.classList.toggle('is-turned', turned);
+      const { width: gw, height: gh } = s.game;
+      // taps: the canvas is drawn turned 90° clockwise, so screen down = game right
+      s.input.setMap(turned ? (u, v) => ({ x: v * gw, y: (1 - u) * gh }) : null);
+    }
+    if (turned) { el.app.style.setProperty('--ta-vw', `${window.innerWidth}px`); el.app.style.setProperty('--ta-vh', `${window.innerHeight}px`); }
     const wrap = el.canvas.parentElement, bw = wrap.clientWidth, bh = wrap.clientHeight;
     if (!bw || !bh) return;
     const { width: gw, height: gh } = s.game;
@@ -273,7 +289,7 @@ export function createApp(root, { store, user, sound, offline = false, touchOnly
     state.session = null;
     overlay('');
     el.stage.hidden = true;
-    el.app.classList.remove('is-playing');
+    el.app.classList.remove('is-playing', 'is-turned');
     el.canvas.style.width = el.canvas.style.height = '';
     if (document.fullscreenElement === el.stage) document.exitFullscreen?.();
   }
