@@ -38,6 +38,22 @@
    "game": "typing",
    "week": "2026-W48",
    "entries": {}
+  },
+  "heat": {
+   "game": "heat",
+   "week": "2026-W48",
+   "entries": {
+    "tg-1869188761": {
+     "name": "Navin S.",
+     "score": 300,
+     "at": "2026-11-26T07:18:00.670Z",
+     "meta": {
+      "grabs": 4,
+      "busts": 1,
+      "banked": 300
+     }
+    }
+   }
   }
  }
 }
