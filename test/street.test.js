@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  buildCity, createStreet, addDriver, setControls, step, botControls, stats, snapshot, tileAt, driveCar, steerToward, easyDrive,
+  buildCity, createStreet, addDriver, setControls, step, botControls, stats, snapshot, tileAt, driveCar, steerToward, easyDrive, reportPosition,
   TILE, COLS, ROWS, ROAD, BUILDING, WW, WH, MAX_STARS,
 } from '../src/games/street.js';
 import { objective } from '../src/games/heat.js';
@@ -9,7 +9,7 @@ import { GAME_META, checkRun } from '../src/games/meta.js';
 
 const run = (sim, secs, ctl = k => botControls(sim, k)) => { for (let i = 0; i < secs * 20 && !sim.over; i++) { for (const k of sim.order) setControls(sim, k, ...ctl(k)); step(sim, 0.05); } };
 
-describe('Street Heat city', () => {
+describe('GTP6 city', () => {
   it('is the same city for the same day, and different the next', () => {
     expect(buildCity('2026-11-25').tiles).toEqual(buildCity('2026-11-25').tiles);
     expect(buildCity('2026-11-25').shops).not.toEqual(buildCity('2026-11-26').shops);
@@ -41,7 +41,7 @@ describe('Street Heat city', () => {
   });
 });
 
-describe('Street Heat rules', () => {
+describe('GTP6 rules', () => {
   it('grabbing loot makes you wanted; the hideout is locked until you lose the police', () => {
     const sim = createStreet('rules');
     const d = addDriver(sim, 'you', 'You');
@@ -116,7 +116,7 @@ describe('Street Heat rules', () => {
   });
 });
 
-describe('Street Heat solo game', () => {
+describe('GTP6 solo game', () => {
   it('points the way: loot first, a car wash when wanted with loot, the hideout to bank', () => {
     const sim = createStreet('obj');
     const d = addDriver(sim, 'you', 'You');
@@ -136,7 +136,7 @@ describe('Street Heat solo game', () => {
   });
 });
 
-describe('Street Heat easy driving', () => {
+describe('GTP6 easy driving', () => {
   const city = buildCity('2026-11-26');
   const drive = (plan, secs) => {
     const car = { x: 60, y: 40, a: 0, v: 0, assist: true };
@@ -185,7 +185,7 @@ describe('Street Heat easy driving', () => {
   });
 });
 
-describe('Street Heat D-pad', () => {
+describe('GTP6 D-pad', () => {
   const fakeInput = () => {
     const ls = { pointerdown: [], pointermove: [], pointerup: [], keydown: [] };
     return { keys: new Set(), pointer: { inside: false }, on: (t, f) => ls[t]?.push(f), fire: (t, pt, id) => ls[t].forEach(f => f(pt, { pointerId: id })), key: k => ls.keydown.forEach(f => f({ key: k })) };
@@ -214,7 +214,7 @@ describe('Street Heat D-pad', () => {
   });
 });
 
-describe('Street Heat handling', () => {
+describe('GTP6 handling', () => {
   it('drives straight by itself when a little off, and slides along walls instead of stopping', () => {
     const city = buildCity('handling');
     const car = { x: TILE * 3, y: TILE, a: 0.17, v: 250, assist: true };
@@ -248,7 +248,7 @@ describe('Street Heat handling', () => {
   });
 });
 
-describe('Street Heat never gets stuck', () => {
+describe('GTP6 never gets stuck', () => {
   it('nose in a wall with the gas on: it backs out and gets going again', () => {
     const city = buildCity('stuck');
     const car = { x: 60, y: 40, a: Math.PI / 2, v: 200, assist: true }; // driving straight at the block below
@@ -279,5 +279,40 @@ describe('Street Heat never gets stuck', () => {
       expect(stuck).toBe(0);
       expect(d.grabs).toBeGreaterThan(8);
     }
+  });
+});
+
+describe('GTP6 party: your phone drives your car', () => {
+  it('takes believable positions from the phone, refuses teleports, buildings and moving while busted', () => {
+    const sim = createStreet('remote', { mode: 'party' });
+    const d = addDriver(sim, 'p', 'P');
+    step(sim, 0.05);
+    expect(reportPosition(sim, 'p', { x: d.x + 10, y: d.y, a: 0, v: 200 })).toBe(true);
+    expect(d.x).toBeCloseTo(TILE + 10);
+    step(sim, 0.05);
+    expect(d.x).toBeCloseTo(TILE + 10); // the server doesn't move a car the phone is driving
+    expect(reportPosition(sim, 'p', { x: d.x + 900, y: d.y, a: 0, v: 200 })).toBe(false); // too far, too fast
+    expect(reportPosition(sim, 'p', { x: 3 * TILE, y: 3 * TILE, a: 0, v: 0 })).toBe(false); // inside a building
+    expect(reportPosition(sim, 'p', { x: NaN, y: 1, a: 0, v: 0 })).toBe(false);
+    d.stun = 1;
+    expect(reportPosition(sim, 'p', { x: d.x + 5, y: d.y, a: 0, v: 0 })).toBe(false);
+  });
+  it('a phone that goes quiet: the car coasts to a stop instead of freezing mid-air', () => {
+    const sim = createStreet('quiet', { mode: 'party' });
+    const d = addDriver(sim, 'p', 'P');
+    step(sim, 0.05);
+    reportPosition(sim, 'p', { x: d.x + 5, y: d.y, a: 0, v: 250 });
+    for (let i = 0; i < 60; i++) step(sim, 0.05);
+    expect(Math.abs(d.v)).toBeLessThan(30);
+  });
+  it('the loot the phone drives over is grabbed on the server', () => {
+    const sim = createStreet('grab', { mode: 'party' });
+    const d = addDriver(sim, 'p', 'P');
+    step(sim, 0.05);
+    const l = sim.loot[0];
+    Object.assign(d, { x: l.x, y: l.y - 30 }); // on the street just short of it (shops are on roads)
+    expect(reportPosition(sim, 'p', { x: l.x, y: l.y - 2, a: Math.PI / 2, v: 150 })).toBe(true);
+    step(sim, 0.05);
+    expect(d.grabs).toBeGreaterThan(0);
   });
 });

@@ -1,4 +1,4 @@
-// Street Heat (solo): 90 seconds in a neon city. Grab loot, shake off the
+// GTP6 (solo): 90 seconds in a neon city. Grab loot, shake off the
 // police, bank it at the hideout. Same city and loot for everyone each day.
 // The rules live in street.js (shared with the party mode).
 
@@ -23,7 +23,7 @@ export function objective(sim, d) {
 
 export default {
   id: 'heat',
-  title: 'Street Heat',
+  title: 'GTP6',
   blurb: 'Grab the loot, lose the cops, bank it at the hideout. 90 seconds in a neon city.',
   controls: 'Tap an arrow (keys, WASD or the on-screen pad) for the way to go: the car follows the road and turns at the next street',
   length: '90 sec',

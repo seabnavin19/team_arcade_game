@@ -1,4 +1,4 @@
-// Street Heat: a top-down neon city. Grab loot, the police come after you,
+// GTP6: a top-down neon city. Grab loot, the police come after you,
 // lose them (or hit the car wash), then bank the loot at the hideout.
 // An original game in the spirit of open-world crime games, kept light:
 // driving, chases and bumping only.
@@ -365,6 +365,24 @@ export function setControls(sim, key, throttle, steer) {
   d.steer = Number.isFinite(steer) ? Math.max(-1, Math.min(1, steer)) : 0;
 }
 
+/**
+ * Party mode: a player's phone drives their own car (exactly as in solo, so
+ * it never fights the server) and reports where it is. The server accepts the
+ * report if it's believable: inside the city, on a street, and no further
+ * than the car could have gone since the last one. Returns whether it was used.
+ */
+export function reportPosition(sim, key, r) {
+  const d = sim.drivers[key];
+  if (!d || !r || ![r.x, r.y, r.a, r.v].every(Number.isFinite)) return false;
+  if (d.stun > 0) return false; // busted: the car stays put
+  if (r.x < 0 || r.y < 0 || r.x > WW || r.y > WH || !drivable(tileAt(sim.city, r.x, r.y))) return false;
+  const since = Math.max(0.05, sim.time - (d.reportedAt ?? -1));
+  if (Math.hypot(r.x - d.x, r.y - d.y) > CAR.max * since * 1.4 + 40) return false;
+  d.x = r.x; d.y = r.y; d.a = r.a; d.v = Math.max(-CAR.rev, Math.min(CAR.max, r.v));
+  d.remote = true; d.reportedAt = sim.time;
+  return true;
+}
+
 function spawnLoot(sim, near = null) {
   const used = new Set(sim.loot.map(l => `${l.x},${l.y}`));
   const options = sim.city.shops.filter(s => !used.has(`${s.x},${s.y}`) && !atHideout(sim.city, s.x, s.y));
@@ -423,8 +441,12 @@ export function step(sim, dt) {
     const d = sim.drivers[k];
     d.washCd = Math.max(0, d.washCd - dt);
     if (d.stun > 0) { d.stun -= dt; d.v *= 0.9; driveCar(d, 0, 0, dt, city); continue; }
-    const crash = driveCar(d, d.throttle, d.steer, dt, city);
-    if (crash > 200) sim.events.push({ e: 'crash', k });
+    // a phone that's reporting its own position drives itself; if it goes quiet, the car coasts to a stop
+    const live = d.remote && sim.time - d.reportedAt < 1;
+    if (!live) {
+      const crash = driveCar(d, d.remote ? 0 : d.throttle, d.remote ? 0 : d.steer, dt, city);
+      if (crash > 200) sim.events.push({ e: 'crash', k });
+    }
     // grab loot
     for (const l of sim.loot) {
       if (l.taken || Math.hypot(l.x - d.x, l.y - d.y) > 26) continue;

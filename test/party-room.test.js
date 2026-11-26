@@ -426,9 +426,9 @@ describe('live party', () => {
     expect(r.obj.party.players['tg-1'].score).toBeGreaterThan(0); // the artist scores for every bot that gets it
   });
 
-  it('plays a Street Heat party (/party gta): bots drive, scores are cash banked', async () => {
-    await webhook({ message: { text: '/party gta', chat: GROUP, from: { id: 1, first_name: 'Dara' } } });
-    expect(lastText()).toMatch(/Street Heat/);
+  it('plays a GTP6 party (/party gtp6): bots drive, scores are cash banked', async () => {
+    await webhook({ message: { text: '/party gtp6', chat: GROUP, from: { id: 1, first_name: 'Dara' } } });
+    expect(lastText()).toMatch(/GTP6/);
     const r = rooms.get(String(GROUP.id));
     const a = fakeWs('tg-1', 'Dara');
     r.sockets.push(a);
@@ -444,7 +444,7 @@ describe('live party', () => {
     expect(snap.cars).toHaveLength(4);
     expect(sim.over).toBe(true);
     for (let k = 0; k < 200 && !/Party results/.test(lastText()); k++) await new Promise(res => setTimeout(res, 5));
-    expect(lastText()).toMatch(/Street Heat Party results/);
+    expect(lastText()).toMatch(/GTP6 Party results/);
     expect(lastText()).toMatch(/banked · \d+ grabs?/);
     const banked = Object.values(sim.drivers).reduce((n, d) => n + d.banked, 0);
     expect(Object.values(r.obj.party.players).reduce((n, p) => n + p.score, 0)).toBe(banked);

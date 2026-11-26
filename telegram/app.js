@@ -220,7 +220,7 @@ export function createHandler({ fetch: fetchImpl = (...a) => fetch(...a), now = 
         if (msg.chat.type === 'private') return reply('Parties are for groups: add me to your team group and send /party there.');
         if (!c.env.PARTY) return reply('Live parties are not switched on for this server yet.');
         const arg = (msg.text.split(/\s+/)[1] || '').toLowerCase();
-        const ALIASES = { street: 'heat', gta: 'heat', gta6: 'heat', cops: 'heat', car: 'heat', cars: 'heat', drive: 'heat', heist: 'heat', iq: 'quiz', brain: 'quiz', ship: 'battle', ships: 'battle', tap: 'reaction', snakes: 'snake', guess: 'draw', drawing: 'draw', boat: 'boat', boats: 'boat', race: 'boat', water: 'boat', festival: 'boat', firework: 'firework', fireworks: 'firework', fire: 'firework', show: 'firework' };
+        const ALIASES = { gtp6: 'heat', gtp: 'heat', street: 'heat', gta: 'heat', gta6: 'heat', cops: 'heat', car: 'heat', cars: 'heat', drive: 'heat', heist: 'heat', iq: 'quiz', brain: 'quiz', ship: 'battle', ships: 'battle', tap: 'reaction', snakes: 'snake', guess: 'draw', drawing: 'draw', boat: 'boat', boats: 'boat', race: 'boat', water: 'boat', festival: 'boat', firework: 'firework', fireworks: 'firework', fire: 'firework', show: 'firework' };
         const pick = ALIASES[arg] || Object.keys(PARTY_GAMES).find(g => g === arg || (arg && PARTY_GAMES[g].title.toLowerCase().startsWith(arg)));
         if (pick) return startParty(c, msg.chat, pick, msg.message_thread_id);
         return reply('🎉 <b>Pick a party game:</b>', { reply_markup: { inline_keyboard: Object.entries(PARTY_GAMES).filter(([, g]) => !g.duo).map(([id, g]) => [{ text: `${g.emoji} ${g.title}`, callback_data: `party:${id}` }]) } });
@@ -267,10 +267,10 @@ export function createHandler({ fetch: fetchImpl = (...a) => fetch(...a), now = 
       case 'help':
         return reply([
           '<b>🕹️ Team Arcade</b>',
-          'Quick games for your break: 🚓 Street Heat, 🚀 Drone Shooter, ⚡ Reaction Tap, 🧠 Memory Match, ⌨️ Typing Race and 💡 Brain Race.',
+          'Quick games for your break: 🚓 GTP6, 🚀 Drone Shooter, ⚡ Reaction Tap, 🧠 Memory Match, ⌨️ Typing Race and 💡 Brain Race.',
           '',
           '/arcade: post the game, then tap <b>Play</b>',
-          '/party: live multiplayer round: 🚣 Water Festival Boat Race, 🎆 Firework Show, ⚡ Reaction Tap, 💡 Brain Race, 🎨 Draw & Guess, 🐍 Snake Arena, 🚀 Ship Battle or 🚓 Street Heat',
+          '/party: live multiplayer round: 🚣 Water Festival Boat Race, 🎆 Firework Show, ⚡ Reaction Tap, 💡 Brain Race, 🎨 Draw & Guess, 🐍 Snake Arena, 🚀 Ship Battle or 🚓 GTP6',
           '/music: open the music room and listen to YouTube songs together',
           '/duo: Duo Mode for two players on one team: 💞 In Sync or 🍜 Night Market Duo (/duo board shows the week\'s top duos)',
           '/board: this week\'s leaderboards and champion',

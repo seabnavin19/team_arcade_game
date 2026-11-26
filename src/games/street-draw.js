@@ -1,4 +1,4 @@
-// Street Heat drawing and controls, shared by the solo game and the party view.
+// GTP6 drawing and controls, shared by the solo game and the party view.
 // Night-time neon city seen from above. Only what's on screen is drawn.
 
 import { TILE, COLS, ROWS, WW, WH, BUILDING, PARK, HIDEOUT, WASH, MAX_STARS, easyDrive } from './street.js';

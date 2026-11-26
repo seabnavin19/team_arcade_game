@@ -342,7 +342,7 @@ export function createPartyApp(root, { api, token, sound, onExit, WebSocketImpl 
     if (!el.root.classList.contains('is-live-canvas')) return;
     const bw = el.canvaswrap.clientWidth, bh = el.canvaswrap.clientHeight;
     if (!bw || !bh) return;
-    // Street Heat follows your car, so it simply shows more street on a bigger or taller screen
+    // GTP6 follows your car, so it simply shows more street on a bigger or taller screen
     Object.assign(screenView, party?.game === 'heat' ? heatLayout(bw, bh) : fitLayout(bw, bh, { rotate: ROTATES.has(party?.game) }));
     const dpr = Math.min(2, window.devicePixelRatio || 1);
     const cw = Math.floor(screenView.sw * screenView.css), ch = Math.floor(screenView.sh * screenView.css);

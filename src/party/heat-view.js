@@ -1,10 +1,11 @@
-// Street Heat party view: everyone's car in one city, seen from above, with
+// GTP6 party view: everyone's car in one city, seen from above, with
 // a camera that follows your car. The screen shape decides how much of the
 // street you see (an upright phone sees more road ahead and behind).
 //
-// Your car is driven locally so steering feels instant; server updates only
-// correct the difference from where you were one round-trip ago (as in Ship
-// Battle). Other cars and the police glide between server updates.
+// Your phone drives your own car, exactly as in the solo game, and tells the
+// server where it is ~20 times a second; the server checks it's believable and
+// does the rest (loot, police, rams, busts). So your car never gets pulled
+// back and forth. Other cars and the police glide between server updates.
 
 import { buildCity, driveCar, MAX_STARS } from '../games/street.js';
 import { cameraFor, drawCity, drawCar, drawLoot, drawStars, drawMinimap, drawPointer, createDriveControls } from '../games/street-draw.js';
@@ -20,12 +21,11 @@ export function heatLayout(boxW, boxH) {
   return { portrait: false, sw: boxW / css, sh: boxH / css, css };
 }
 
-export function createHeatView({ ctx, input, send, serverNow, getParty, getMe, color, sound, parts, floats, view, rtt = () => 150 }) {
+export function createHeatView({ ctx, input, send, serverNow, getParty, getMe, color, sound, parts, floats, view }) {
   let city = null, seed = null;
   const snaps = [];
-  let mine = null, srvMine = null;
-  const hist = [];
-  let cam = null, banner = null, lastSent = { th: 9, st: 9, at: 0 };
+  let mine = null;
+  let cam = null, banner = null, lastSent = { at: 0 };
   const controls = createDriveControls(input, {
     toWorld: (x, y) => ({ x: x + (cam?.x || 0), y: y + (cam?.y || 0) }),
     screen: () => ({ w: view.sw, h: view.sh }),
@@ -44,23 +44,9 @@ export function createHeatView({ ctx, input, send, serverNow, getParty, getMe, c
     const srv = m.cars.find(c => c[0] === myIdx);
     if (srv) {
       const [, x, y, a, v, , , , , stun] = srv;
-      srvMine = { x, y, a, v };
-      if (!mine || stun) { mine = { x, y, a, v, assist: true }; hist.length = 0; }
-      else {
-        const r = Number.isFinite(rtt()) ? Math.min(600, rtt()) : 150;
-        const at = performance.now() - r - 25;
-        let past = null;
-        for (let i = hist.length - 1; i >= 0; i--) { past = hist[i]; if (hist[i].t <= at) break; }
-        const ex = x - (past ? past.x : mine.x), ey = y - (past ? past.y : mine.y);
-        if (Math.hypot(ex, ey) > 110) { Object.assign(mine, { x, y, a, v }); hist.length = 0; }
-        else if (Math.hypot(ex, ey) > 1.5) {
-          const cx = ex * 0.3, cy = ey * 0.3;
-          mine.x += cx; mine.y += cy;
-          for (const h of hist) { h.x += cx; h.y += cy; }
-        }
-        // speed: only when clearly off (a bump or a police push); small differences are just lag
-        if (Math.abs(v - mine.v) > 120) mine.v = v;
-      }
+      // the first update places the car; after that it's ours, except when busted (the server holds it)
+      if (!mine) mine = { x, y, a, v, assist: true };
+      if (stun) { mine.v = 0; if (Math.hypot(x - mine.x, y - mine.y) > 60) Object.assign(mine, { x, y }); }
       mine.stun = !!stun;
     }
     for (const e of m.events || []) {
@@ -84,13 +70,11 @@ export function createHeatView({ ctx, input, send, serverNow, getParty, getMe, c
     if (!city || !mine) return;
     const [th, st] = mine.stun ? [0, 0] : controls.read(mine);
     driveCar(mine, th, st, Math.min(dt, 0.05), city);
+    // tell the server where we are, 20 times a second
     const t = performance.now();
-    hist.push({ t, x: mine.x, y: mine.y });
-    while (hist.length && hist[0].t < t - 1000) hist.shift();
-    const changed = Math.abs(th - lastSent.th) > 0.05 || Math.abs(st - lastSent.st) > 0.05;
-    if ((changed && t - lastSent.at > 33) || t - lastSent.at > 400) {
-      lastSent = { th, st, at: t };
-      send({ type: 'drive', th: Math.round(th * 100) / 100, st: Math.round(st * 100) / 100 });
+    if (t - lastSent.at >= 50) {
+      lastSent = { at: t };
+      send({ type: 'drive', x: Math.round(mine.x * 10) / 10, y: Math.round(mine.y * 10) / 10, a: Math.round(mine.a * 1000) / 1000, v: Math.round(mine.v) });
     }
   }
 

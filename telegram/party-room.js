@@ -17,7 +17,7 @@ import { createRace, addRower, paddle, step as stepRace, snapshot as raceSnapsho
 
 import { isGif, fromBase64 } from '../src/party/firework-gif.js';
 import { createShow, addSparker, submit as fwSubmit, rate as fwRate, artFor, step as stepShow, snapshot as showSnapshot, showStats, showSummary, isOver as showOver, TICK_MS as SHOW_TICK_MS } from '../src/party/firework.js';
-import { createStreet, addDriver, setControls as setDrive, step as stepStreet, snapshot as streetSnapshot, stats as streetStats, isOver as streetOver, botControls as streetBot } from '../src/games/street.js';
+import { createStreet, addDriver, reportPosition, setControls as setDrive, step as stepStreet, snapshot as streetSnapshot, stats as streetStats, isOver as streetOver, botControls as streetBot } from '../src/games/street.js';
 import {
   fillWithBots, botKeys, battleBotInput, snakeBotDir, reactionBotTap, quizBotAnswer, boatBotTap, drawBotGuess, drawBotChatter,
   fireworkBotArt, fireworkBotReadyAt, fireworkBotStars,
@@ -64,7 +64,8 @@ const LIVE = {
     summary: raceSummary, isOver: raceOver,
     input: (sim, key, msg, now) => { const r = paddle(sim, key, Number(msg.t), now); return r && { type: 'paddle-result', q: r.q }; } },
   heat: { tickMs: 50, types: ['drive'], create: seed => createStreet(seed, { mode: 'party' }), add: addDriver, step: sim => stepStreet(sim, 0.05), snapshot: streetSnapshot, stats: streetStats, isOver: streetOver,
-    input: (sim, key, msg) => { if (msg.type === 'drive') setDrive(sim, key, Number(msg.th), Number(msg.st)); } },
+    // the phone drives its own car and reports where it is (older pages send throttle/steer)
+    input: (sim, key, msg) => { if (msg.type !== 'drive') return; if (Number.isFinite(msg.x)) reportPosition(sim, key, { x: +msg.x, y: +msg.y, a: +msg.a, v: +msg.v }); else setDrive(sim, key, Number(msg.th), Number(msg.st)); } },
   battle: { tickMs: 50, types: ['input'], create: createBattle, add: addShip, step: sim => stepBattle(sim, 0.05), snapshot: battleSnapshot, stats: battleStats,
     input: (sim, key, msg) => { if (msg.type === 'input') setInput(sim, key, Number(msg.mx), Number(msg.my)); } },
   snake: { tickMs: SNAKE_TICK_MS, types: ['dir'], create: createSnakeGame, add: addSnake, step: stepSnake, snapshot: snakeSnapshot, stats: snakeStats,
