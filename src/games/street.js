@@ -77,9 +77,12 @@ export const tileAt = (city, x, y) => {
   if (c < 0 || r < 0 || c >= COLS || r >= ROWS) return BUILDING;
   return city.tiles[r * COLS + c];
 };
-const inBlock = (x, y, b) => x >= b.c * TILE && x < (b.c + 4) * TILE && y >= b.r * TILE && y < (b.r + 4) * TILE;
-export const atHideout = (city, x, y) => inBlock(x, y, city.hideout);
-export const atWash = (city, x, y) => city.washes.some(w => inBlock(x, y, w));
+// The hideout and car washes work as soon as you drive along any road right
+// next to them (the cars stay on the roads), not only inside the block.
+export const ZONE_MARGIN = TILE * 1.3;
+const inZone = (x, y, b) => x >= b.c * TILE - ZONE_MARGIN && x < (b.c + 4) * TILE + ZONE_MARGIN && y >= b.r * TILE - ZONE_MARGIN && y < (b.r + 4) * TILE + ZONE_MARGIN;
+export const atHideout = (city, x, y) => inZone(x, y, city.hideout);
+export const atWash = (city, x, y) => city.washes.some(w => inZone(x, y, w));
 
 // ---------------------------------------------------------------- driving
 /** Move a car one step: throttle −1..1 (minus = brake/reverse), steer −1..1. Returns crash speed (0 if none). */

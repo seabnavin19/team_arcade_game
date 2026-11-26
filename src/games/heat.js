@@ -53,12 +53,12 @@ export default {
         setControls(sim, 'you', ...controls.read(me));
         step(sim, dt);
         for (const e of sim.events) {
-          if (e.e === 'grab') { sound.hit(); parts.burst(e.x, e.y, C.yellow, 16); floats.add(e.x, e.y - 14, `+$${e.v}`, C.yellow); }
-          if (e.e === 'stars' && e.n > 0) say(`WANTED ${'★'.repeat(e.n)}`, C.red, 1.2);
+          if (e.e === 'grab') { sound.hit(); parts.burst(e.x, e.y, C.yellow, 16); floats.add(e.x, e.y - 14, `+$${e.v}`, C.yellow); say(`$${me.carry} in the car · bank it at the pink HIDEOUT`, C.yellow, 2.2); }
+          if (e.e === 'stars' && e.n > 0) say(`WANTED ${'★'.repeat(e.n)} · lose the cops or use a CAR WASH`, C.red, 2);
           if (e.e === 'bank') { sound.go(); parts.burst(me.x, me.y, C.magenta, 26); say(e.bonus ? `BANKED $${e.v} · ${e.n}-grab haul +$${e.bonus}` : `BANKED $${e.v}`, C.lime, 2); }
           if (e.e === 'hot') { sound.miss(); say('Lose the cops first!', C.red); }
-          if (e.e === 'wash') { sound.go(); parts.burst(me.x, me.y, C.cyan, 30); say('Fresh paint, no heat', C.cyan); }
-          if (e.e === 'lost') say('LOST THEM', C.lime);
+          if (e.e === 'wash') { sound.go(); parts.burst(me.x, me.y, C.cyan, 30); say(me.carry ? 'No heat · now bank it at the HIDEOUT' : 'Fresh paint, no heat', C.cyan, 2); }
+          if (e.e === 'lost') say(me.carry ? 'LOST THEM · now bank it at the HIDEOUT' : 'LOST THEM', C.lime, 2);
           if (e.e === 'busted') { sound.bad(); shake = 10; say(e.v ? `BUSTED · lost $${e.v}` : 'BUSTED', C.red, 2); }
           if (e.e === 'crash') { shake = Math.max(shake, 5); }
         }

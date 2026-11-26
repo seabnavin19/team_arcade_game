@@ -1,7 +1,7 @@
 // GTP6 drawing and controls, shared by the solo game and the party view.
 // Night-time neon city seen from above. Only what's on screen is drawn.
 
-import { TILE, COLS, ROWS, WW, WH, BUILDING, PARK, HIDEOUT, WASH, MAX_STARS, easyDrive } from './street.js';
+import { TILE, COLS, ROWS, WW, WH, BUILDING, PARK, HIDEOUT, WASH, MAX_STARS, ZONE_MARGIN, easyDrive } from './street.js';
 import { C } from './draw.js';
 
 export const CAR_COLORS = ['#ff3d9a', '#2de2e6', '#ffd23f', '#9cff57', '#b18cff', '#ff8a3d', '#5aa9ff', '#ff6b6b'];
@@ -62,8 +62,12 @@ export function drawCity(ctx, city, cam, t) {
     if (p.x < cam.x - 200 || p.x > cam.x + cam.w + 200 || p.y < cam.y - 200 || p.y > cam.y + cam.h + 200) return;
     ctx.save(); ctx.font = '900 13px system-ui, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     ctx.shadowColor = col; ctx.shadowBlur = 12; ctx.fillStyle = col; ctx.fillText(text, p.x, p.y); ctx.restore();
-    ctx.save(); ctx.strokeStyle = col; ctx.globalAlpha = 0.5 + 0.3 * Math.sin(t * 3); ctx.lineWidth = 2; ctx.setLineDash([8, 8]);
-    ctx.strokeRect(p.c * TILE + 3, p.r * TILE + 3, 4 * TILE - 6, 4 * TILE - 6); ctx.restore();
+    // the zone: the roads all round the block glow; drive along any of them
+    const m = ZONE_MARGIN, x0 = p.c * TILE - m, y0 = p.r * TILE - m, size = 4 * TILE + 2 * m;
+    ctx.save(); ctx.globalAlpha = 0.12 + 0.06 * Math.sin(t * 3); ctx.fillStyle = col;
+    ctx.fillRect(x0, y0, size, m); ctx.fillRect(x0, y0 + size - m, size, m); ctx.fillRect(x0, y0 + m, m, size - 2 * m); ctx.fillRect(x0 + size - m, y0 + m, m, size - 2 * m);
+    ctx.globalAlpha = 0.55 + 0.3 * Math.sin(t * 3); ctx.strokeStyle = col; ctx.lineWidth = 3; ctx.setLineDash([12, 10]);
+    ctx.strokeRect(x0 + 2, y0 + 2, size - 4, size - 4); ctx.restore();
   };
   sign(city.hideout, 'HIDEOUT', C.magenta);
   for (const w of city.washes) sign(w, 'CAR WASH', C.cyan);

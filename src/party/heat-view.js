@@ -51,12 +51,12 @@ export function createHeatView({ ctx, input, send, serverNow, getParty, getMe, c
     }
     for (const e of m.events || []) {
       const mineEv = m.who[e.k] === me || e.k === me;
-      if (e.e === 'grab') { parts.burst(e.x, e.y, C.yellow, 14); if (e.k === me) { sound.hit(); floats.add(e.x, e.y - 14, `+$${e.v}`, C.yellow); } }
+      if (e.e === 'grab') { parts.burst(e.x, e.y, C.yellow, 14); if (e.k === me) { sound.hit(); floats.add(e.x, e.y - 14, `+$${e.v}`, C.yellow); say('Bank it at the pink HIDEOUT to score', C.yellow, 2200); } }
       if (e.e === 'bank' && mineEv) { sound.go(); say(e.bonus ? `BANKED $${e.v} · ${e.n}-grab haul +$${e.bonus}` : `BANKED $${e.v}`, C.lime, 2000); }
       if (e.e === 'hot' && mineEv) { sound.miss(); say('Lose the cops first!', C.red); }
       if (e.e === 'wash' && mineEv) { sound.go(); say('Fresh paint, no heat', C.cyan); }
       if (e.e === 'lost' && mineEv) say('LOST THEM', C.lime);
-      if (e.e === 'stars' && mineEv && e.n > 0) say(`WANTED ${'★'.repeat(e.n)}`, C.red, 1100);
+      if (e.e === 'stars' && mineEv && e.n > 0) say(`WANTED ${'★'.repeat(e.n)} · lose the cops or use a CAR WASH`, C.red, 1800);
       if (e.e === 'busted') { if (mineEv) { sound.bad(); say(e.v ? `BUSTED · lost $${e.v}` : 'BUSTED', C.red, 2000); } else say(`${nameOf(e.k)} got busted!`, C.cyan, 1400); }
       if (e.e === 'ram') {
         parts.burst(e.x, e.y, C.yellow, 20);

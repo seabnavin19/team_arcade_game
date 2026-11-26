@@ -316,3 +316,21 @@ describe('GTP6 party: your phone drives your car', () => {
     expect(d.grabs).toBeGreaterThan(0);
   });
 });
+
+describe('GTP6 banking with the arrows', () => {
+  it('driving along a road next to the hideout banks the loot (the car never leaves the roads)', () => {
+    for (const day of ['2026-11-26', '2026-11-27']) {
+      const sim = createStreet(`${day}:solo`);
+      const d = addDriver(sim, 'you', 'You');
+      for (let i = 0; i < 90 * 30; i++) {
+        const goal = d.carry > 0 ? (d.stars ? sim.city.washes[0] : sim.city.hideout) : (sim.loot[0] || sim.city.hideout);
+        const dx = goal.x - d.x, dy = goal.y - d.y;
+        const want = Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'right' : 'left') : (dy > 0 ? 'down' : 'up');
+        setControls(sim, 'you', ...easyDrive(sim.city, d, want));
+        step(sim, 1 / 30);
+        sim.cops = [];
+      }
+      expect(d.banked).toBeGreaterThan(0);
+    }
+  });
+});
