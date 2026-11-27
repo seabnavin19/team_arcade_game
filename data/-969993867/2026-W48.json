@@ -32,7 +32,16 @@
   "brain": {
    "game": "brain",
    "week": "2026-W48",
-   "entries": {}
+   "entries": {
+    "tg-1618102395": {
+     "name": "Vichhika",
+     "score": 5750,
+     "at": "2026-11-27T09:16:27.093Z",
+     "meta": {
+      "right": 7
+     }
+    }
+   }
   },
   "typing": {
    "game": "typing",
